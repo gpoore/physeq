@@ -1603,13 +1603,13 @@ class WrappedEq(BaseWrapped):
         return self.wrapped
 
     @property
-    def lhs(self) -> sympy.Expr:
+    def lhs(self) -> WrappedExpr:
         if self.wrapped_lhs is not None:
             return self.wrapped_lhs
         return WrappedExpr(self.wrapped.lhs, parents=self)
 
     @property
-    def rhs(self) -> sympy.Expr:
+    def rhs(self) -> WrappedExpr:
         if self.wrapped_rhs is not None:
             return self.wrapped_rhs
         return WrappedExpr(self.wrapped.rhs, parents=self)
