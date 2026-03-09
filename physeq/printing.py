@@ -69,6 +69,13 @@ class LatexPrinter(SymPyLatexPrinter):
             raise TypeError
         if symbol_replace is not None:
             symbol_replace = symbol.translate_numerical_xreplace_rule(symbol_replace)
+        symbol_replace_all = settings.pop('symbol_replace_all', None)
+        if symbol_replace_all is not None and not isinstance(symbol_replace_all, dict):
+            raise TypeError
+        if symbol_replace_all is not None:
+            symbol_replace_all = symbol.translate_numerical_xreplace_rule(symbol_replace_all)
+        if symbol_replace and symbol_replace_all:
+            raise TypeError('cannot use "symbol_replace" and "symbol_replace_all" at the same time')
         mul_symbol_latex_numbers = settings.pop('mul_symbol_latex_numbers', r' \times ')
         if mul_symbol_latex_numbers is not None and not isinstance(mul_symbol_latex_numbers, str):
             raise TypeError
@@ -82,6 +89,7 @@ class LatexPrinter(SymPyLatexPrinter):
         self._settings['separate_numerical_frac']  = separate_numerical_frac
         self._settings['float_fmtspec'] = float_fmtspec
         self._settings['symbol_replace'] = symbol_replace
+        self._settings['symbol_replace_all'] = symbol_replace_all
         if mul_symbol_latex_numbers:
             self._settings['mul_symbol_latex_numbers'] = mul_symbol_latex_numbers
         self._settings['unit_sep'] = unit_sep
@@ -189,6 +197,13 @@ class LatexPrinter(SymPyLatexPrinter):
                 replacement = self._settings['symbol_replace'][expr]
             except KeyError:
                 pass
+            else:
+                return rf'\left({self._print(replacement)}\right)'
+        if self._settings['symbol_replace_all']:
+            try:
+                replacement = self._settings['symbol_replace_all'][expr]
+            except KeyError:
+                raise KeyError(f'"symbol_replace_all" is missing replacement for "{expr}"')
             else:
                 return rf'\left({self._print(replacement)}\right)'
         return super()._print_Symbol(expr)
