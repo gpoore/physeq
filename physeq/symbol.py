@@ -15,18 +15,18 @@ from astropy.units import Quantity
 from astropy.units.core import UnitBase
 from typing import Any, Callable, Literal, Self
 from sympy.core.assumptions import check_assumptions as sympy_check_assumptions
-from . import ordering
+from . import exprorder
 
 
 
 
 def translate_xreplace_rule(
-    raw_rule: dict[sympy.Symbol | ordering.WrappedExpr, sympy.Expr | Quantity | int | float],
+    raw_rule: dict[sympy.Symbol | exprorder.WrappedExpr, sympy.Expr | Quantity | int | float],
     check_assumptions: bool = True,
     strict_quantities: bool = True,
 ) -> dict[sympy.Symbol, sympy.Expr | int | float]:
     '''
-    Translate an `.xreplace()` rule that contains `ordering.WrappedExpr`
+    Translate an `.xreplace()` rule that contains `exprorder.WrappedExpr`
     or `astropy.units.Quantity` into a form compatible with SymPy.
 
     If `check_assumptions`:  check that a symbol's assumptions are
@@ -38,11 +38,11 @@ def translate_xreplace_rule(
     '''
     rule: dict[sympy.Symbol, sympy.Expr | int | float] = {}
     for k, v in raw_rule.items():
-        if isinstance(k, ordering.WrappedExpr):
+        if isinstance(k, exprorder.WrappedExpr):
             k = k.expr
         if not isinstance(k, sympy.Symbol):
             raise TypeError
-        if isinstance(v, ordering.WrappedExpr):
+        if isinstance(v, exprorder.WrappedExpr):
             v = v.expr
         elif isinstance(v, (sympy.Expr, int, float)):
             pass
@@ -65,7 +65,7 @@ def translate_xreplace_rule(
 
 
 def translate_numerical_xreplace_rule(
-    raw_rule: dict[sympy.Symbol | ordering.WrappedExpr,
+    raw_rule: dict[sympy.Symbol | exprorder.WrappedExpr,
                     sympy.Number | sympy.NumberSymbol | Quantity | ConstSymbol | int | float],
     check_assumptions: bool = True,
     strict_quantities: bool = True,
@@ -74,7 +74,7 @@ def translate_numerical_xreplace_rule(
 ) -> dict[sympy.Symbol, sympy.Number | int | float]:
     '''
     Translate an `.xreplace()` rule with purely numerical values including
-    PhysEq `ConstSymbol`, `ordering.WrappedExpr`, or
+    PhysEq `ConstSymbol`, `exprorder.WrappedExpr`, or
     `astropy.units.Quantity` into a form compatible with SymPy.
 
     If `check_assumptions`:  check that a symbol's assumptions are
@@ -86,11 +86,11 @@ def translate_numerical_xreplace_rule(
     '''
     rule: dict[sympy.Symbol, sympy.Number | int | float] = {}
     for k, v in raw_rule.items():
-        if isinstance(k, ordering.WrappedExpr):
+        if isinstance(k, exprorder.WrappedExpr):
             k = k.expr
         if not isinstance(k, sympy.Symbol):
             raise TypeError
-        if isinstance(v, ordering.WrappedExpr):
+        if isinstance(v, exprorder.WrappedExpr):
             v = v.expr
         if isinstance(v, (sympy.Number, int, float)):
             pass
@@ -124,7 +124,7 @@ def translate_numerical_xreplace_rule(
         if check_assumptions and sympy_check_assumptions(v, k) is False:
             raise TypeError(f'SymPy assumptions for "{k}" are incompatible with replacement value "{v}"')
         if unevaluated:
-            rule[k] = ordering.OrderUnevaluatedExpr(sympy.sympify(v))
+            rule[k] = exprorder.OrderUnevaluatedExpr(sympy.sympify(v))
         else:
             rule[k] = v
     return rule
@@ -368,14 +368,14 @@ class ConstSymbol(BaseSymbol):
 
 
 
-class WrappedExpr(ordering.WrappedExpr):
+class WrappedExpr(exprorder.WrappedExpr):
     @staticmethod
     def wrapper_class(*args, **kwargs) -> WrappedExpr:
         return WrappedExpr(*args, **kwargs)
 
     def xreplace(self, raw_rule: dict, **kwargs) -> Self:
         '''
-        `.xreplace()` compatible with `ordering.WrappedExpr` and
+        `.xreplace()` compatible with `exprorder.WrappedExpr` and
         `astropy.units.Quantity`.
         '''
         return type(self)(self.wrapped.xreplace(translate_xreplace_rule(raw_rule, **kwargs)), parents=self)
@@ -383,7 +383,7 @@ class WrappedExpr(ordering.WrappedExpr):
     def num_xreplace(self, raw_rule: dict, **kwargs) -> Self:
         '''
         `.xreplace()` with purely numerical values compatible with PhysEq
-        `ConstSymbol`, `ordering.WrappedExpr`, or `astropy.units.Quantity`.
+        `ConstSymbol`, `exprorder.WrappedExpr`, or `astropy.units.Quantity`.
         '''
         return type(self)(self.wrapped.xreplace(translate_numerical_xreplace_rule(raw_rule, **kwargs)), parents=self)
 

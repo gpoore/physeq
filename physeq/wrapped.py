@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import sympy
 from astropy.units import Quantity
-from . import equation, ordering, symbol
-# from .ordering import WrappedExpr
+from . import equation, exprorder, symbol
 from .symbol import WrappedExpr
 from .equation import WrappedEq
 
@@ -53,12 +52,12 @@ Eq = equation.WrappedEq.wrap_eq_class(equation.Eq)
 
 
 
-def solveset_with_checked_assumptions(eq: sympy.Eq | ordering.WrappedEq,
-    symbol: sympy.Symbol | ordering.WrappedExpr,
+def solveset_with_checked_assumptions(eq: sympy.Eq | exprorder.WrappedEq,
+    symbol: sympy.Symbol | exprorder.WrappedExpr,
     domain=sympy.Reals,
     **assumptions: dict[str, bool | None],
 ) -> sympy.FiniteSet:
-    if isinstance(eq, ordering.WrappedEq):
+    if isinstance(eq, exprorder.WrappedEq):
         parents = eq
     else:
         parents = None
@@ -70,18 +69,18 @@ def solveset_with_checked_assumptions(eq: sympy.Eq | ordering.WrappedEq,
 
 
 def solveset_for_ans(
-    eq: sympy.Eq | ordering.WrappedEq,
-    symbol: sympy.Symbol | ordering.WrappedExpr,
+    eq: sympy.Eq | exprorder.WrappedEq,
+    symbol: sympy.Symbol | exprorder.WrappedExpr,
     domain=sympy.Reals,  # expanded support to include `Complexes`?
     *,
     ans: sympy.Number | sympy.NumberSymbol | int | float,
-    xreplace: dict[sympy.Symbol | ordering.WrappedExpr,
+    xreplace: dict[sympy.Symbol | exprorder.WrappedExpr,
                    sympy.Number | sympy.NumberSymbol | Quantity | symbol.ConstSymbol | int | float],
     # https://docs.python.org/3/library/math.html#math.isclose
     rel_tol: float | None = None,
     abs_tol: float | None = None,
 ) -> sympy.FiniteSet:
-    if isinstance(eq, ordering.WrappedEq):
+    if isinstance(eq, exprorder.WrappedEq):
         parents = eq
     else:
         parents = None

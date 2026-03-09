@@ -15,15 +15,15 @@ import sympy
 from astropy.units import Quantity
 from typing import Literal, Self
 from sympy.core.assumptions import check_assumptions as sympy_check_assumptions
-from . import ordering
+from . import exprorder
 from .symbol import ConstSymbol, Symbol, translate_numerical_xreplace_rule, translate_xreplace_rule
 
 
 
 
 def solveset_with_checked_assumptions(
-    eq: sympy.Eq | ordering.WrappedEq,
-    symbol: sympy.Symbol | ordering.WrappedExpr,
+    eq: sympy.Eq | exprorder.WrappedEq,
+    symbol: sympy.Symbol | exprorder.WrappedExpr,
     domain=sympy.Complexes,
     **assumptions: dict[str, bool | None],
 ) -> sympy.FiniteSet:
@@ -32,11 +32,11 @@ def solveset_with_checked_assumptions(
     assumptions (for example, `nonnegative` or `negative`).  Additional
     optional assumptions can be provided to further narrow the solutions.
     '''
-    if isinstance(eq, ordering.WrappedEq):
+    if isinstance(eq, exprorder.WrappedEq):
         eq = eq.eq
     elif not isinstance(eq, sympy.Eq):
         raise TypeError
-    if isinstance(symbol, ordering.WrappedExpr):
+    if isinstance(symbol, exprorder.WrappedExpr):
         if not isinstance(symbol.expr, sympy.Symbol):
             raise TypeError
         symbol = symbol.expr
@@ -64,12 +64,12 @@ def solveset_with_checked_assumptions(
 
 
 def solveset_for_ans(
-    eq: sympy.Eq | ordering.WrappedEq,
-    symbol: sympy.Symbol | ordering.WrappedExpr,
+    eq: sympy.Eq | exprorder.WrappedEq,
+    symbol: sympy.Symbol | exprorder.WrappedExpr,
     domain=sympy.Reals,  # expanded support to include `Complexes`?
     *,
     ans: sympy.Number | sympy.NumberSymbol | int | float,
-    xreplace: dict[sympy.Symbol | ordering.WrappedExpr,
+    xreplace: dict[sympy.Symbol | exprorder.WrappedExpr,
                    sympy.Number | sympy.NumberSymbol | Quantity | ConstSymbol | int | float],
     rel_tol: float | None = None,
     abs_tol: float | None = None,
@@ -81,11 +81,11 @@ def solveset_for_ans(
     This is intended for determining which symbolic solution(s) yield a known
     numerical answer.
     '''
-    if isinstance(eq, ordering.WrappedEq):
+    if isinstance(eq, exprorder.WrappedEq):
         eq = eq.eq
     elif not isinstance(eq, sympy.Eq):
         raise TypeError
-    if isinstance(symbol, ordering.WrappedExpr):
+    if isinstance(symbol, exprorder.WrappedExpr):
         if not isinstance(symbol.expr, sympy.Symbol):
             raise TypeError
         symbol = symbol.expr
@@ -119,16 +119,16 @@ def solveset_for_ans(
 
 class Eq(sympy.Eq):  # `sympy.Eq` is alias for `sympy.Equality`
     '''
-    Subclass of `sympy.Eq` that is compatible with `ordering.WrappedExpr` and
+    Subclass of `sympy.Eq` that is compatible with `exprorder.WrappedExpr` and
     `astropy.units.Quantity`.
 
     By default, `evaluate=False`.
     '''
     def __new__(cls, lhs, rhs, **options):
         options.setdefault('evaluate', False)
-        if isinstance(lhs, ordering.WrappedExpr):
+        if isinstance(lhs, exprorder.WrappedExpr):
             lhs = lhs.expr
-        if isinstance(rhs, ordering.WrappedExpr):
+        if isinstance(rhs, exprorder.WrappedExpr):
             rhs = rhs.expr
         obj = super().__new__(cls, lhs, rhs, **options)
         if not isinstance(obj, cls):
@@ -138,7 +138,7 @@ class Eq(sympy.Eq):  # `sympy.Eq` is alias for `sympy.Equality`
 
     def xreplace(self, raw_rule: dict, **kwargs) -> Self:
         '''
-        `.xreplace()` compatible with `ordering.WrappedExpr` and
+        `.xreplace()` compatible with `exprorder.WrappedExpr` and
         `astropy.units.Quantity`.
         '''
         return super().xreplace(translate_xreplace_rule(raw_rule, **kwargs))
@@ -146,7 +146,7 @@ class Eq(sympy.Eq):  # `sympy.Eq` is alias for `sympy.Equality`
     def num_xreplace(self, raw_rule: dict, **kwargs) -> Self:
         '''
         `.xreplace()` with purely numerical values compatible with PhysEq
-        `ConstSymbol`, `ordering.WrappedExpr`, or `astropy.units.Quantity`.
+        `ConstSymbol`, `exprorder.WrappedExpr`, or `astropy.units.Quantity`.
         '''
         return super().xreplace(translate_numerical_xreplace_rule(raw_rule, **kwargs))
 
@@ -171,7 +171,7 @@ class Eq(sympy.Eq):  # `sympy.Eq` is alias for `sympy.Equality`
 
 
 
-class WrappedEq(ordering.WrappedEq):
+class WrappedEq(exprorder.WrappedEq):
     wrapped: Eq
     eq: Eq
 

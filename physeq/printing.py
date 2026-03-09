@@ -51,7 +51,7 @@ from sympy.core.singleton import S
 from sympy.printing.latex import _between_two_numbers_p
 from sympy.printing.latex import LatexPrinter as SymPyLatexPrinter
 from sympy.utilities.iterables import sift
-from . import ordering, symbol
+from . import exprorder, symbol
 
 
 
@@ -85,15 +85,15 @@ class LatexPrinter(SymPyLatexPrinter):
         if mul_symbol_latex_numbers:
             self._settings['mul_symbol_latex_numbers'] = mul_symbol_latex_numbers
         self._settings['unit_sep'] = unit_sep
-        self._wrapped: ordering.BaseWrapped | None = None
-        self._wrapped_lhs: ordering.WrappedExpr | None = None
-        self._wrapped_rhs: ordering.WrappedExpr | None = None
+        self._wrapped: exprorder.BaseWrapped | None = None
+        self._wrapped_lhs: exprorder.WrappedExpr | None = None
+        self._wrapped_rhs: exprorder.WrappedExpr | None = None
 
 
-    def doprint(self, expr: Basic | ordering.BaseWrapped | Quantity | Unit) -> str:
-        if isinstance(expr, ordering.BaseWrapped):
+    def doprint(self, expr: Basic | exprorder.BaseWrapped | Quantity | Unit) -> str:
+        if isinstance(expr, exprorder.BaseWrapped):
             self._wrapped = expr
-            if isinstance(expr, ordering.WrappedEq):
+            if isinstance(expr, exprorder.WrappedEq):
                 self._wrapped_lhs = expr.wrapped_lhs
                 self._wrapped_rhs = expr.wrapped_rhs
             printed = super().doprint(expr.wrapped)
@@ -375,6 +375,6 @@ class LatexPrinter(SymPyLatexPrinter):
     #### End function from `sympy/printing/latex.py`
 
 
-def latex(expr: Basic | ordering.BaseWrapped | Quantity | Unit, **settings) -> str:
+def latex(expr: Basic | exprorder.BaseWrapped | Quantity | Unit, **settings) -> str:
     #settings.setdefault('mul_symbol_latex_numbers', r'\times')
     return LatexPrinter(settings).doprint(expr)
