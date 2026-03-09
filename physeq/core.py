@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2025, Geoffrey M. Poore
+# Copyright (c) 2025-2026, Geoffrey M. Poore
 # All rights reserved.
 #
 # Licensed under the BSD 3-Clause License:
@@ -11,16 +11,16 @@
 from __future__ import annotations
 
 from astropy.units.si import kilogram, second  # type: ignore
-from .symbol import Symbol
+from .wrapped import Symbol
 
 
 # Time
-t = Symbol(r't', 'time', second, r't_{<n>}')
+t = Symbol(r't', 'time', second, r't_{<sub>}')
 
 
 # Mass
-m = Symbol(r'm', 'mass', kilogram, r'm_{<n>}')
+m = Symbol(r'm', 'mass', kilogram, r'm_{<sub>}')
 m_1 = m.subscript('1')
 m_2 = m.subscript('2')
-M = Symbol(r'M', 'mass', kilogram, r'M_{<n>}')
+M = Symbol(r'M', 'mass', kilogram, r'M_{<sub>}')
 m_sys = m.subscript('sys', style='normal')

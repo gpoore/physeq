@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2025, Geoffrey M. Poore
+# Copyright (c) 2025-2026, Geoffrey M. Poore
 # All rights reserved.
 #
 # Licensed under the BSD 3-Clause License:
@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from astropy.units.si import meter, second  # type: ignore
 from .core import m_1, m_2
-from .equation import Eq
+from .wrapped import Eq
 from .kinematics import v_x, v_01x, v_1x, v_02x, v_2x
-from .symbol import Symbol
+from .wrapped import Symbol
 
 p_01x = Symbol(r'p_{0\,1\,x}', '1: initial momentum in x', meter/second)
 p_1x = Symbol(r'p_{1\,x}', '1: momentum in x', meter/second)
