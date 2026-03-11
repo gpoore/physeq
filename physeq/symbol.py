@@ -133,9 +133,20 @@ def translate_numerical_xreplace_rule(
 
 
 class BaseSymbol(sympy.Symbol):
+    # SymPy hashes/distinguishes symbols using
+    # `(self.name,) + self._assumptions0`.  This doesn't work for PhysEq,
+    # because it must be possible to modify/customize names.  `description`
+    # is used instead of `name` to uniquely identify symbols.
+    #
+    # Reference:
+    #   https://github.com/sympy/sympy/blob/master/sympy/core/symbol.py
+
     __slots__ = ('description', 'si_coherent_unit')
     _symbol_cache: dict[tuple, Self] = {}
-    _symbol_collision_cache: dict[tuple, Self] = {}
+    _symbol_description_cache: dict[str, Self] = {}
+
+
+    is_phys_const: bool
 
 
     def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, **assumptions):
@@ -149,19 +160,19 @@ class BaseSymbol(sympy.Symbol):
         # https://docs.sympy.org/latest/guides/assumptions.html
         assumptions.setdefault('extended_real', True)
         assumptions_tuple = tuple(sorted(assumptions.items()))
-        cache_key = (name, description, si_coherent_unit, assumptions_tuple)
+        cache_key = (description, si_coherent_unit, assumptions_tuple)
         cls._sanitize(assumptions, cls)  # type: ignore
         try:
-            return cls._symbol_cache[cache_key]
+            obj = cls._symbol_cache[cache_key]
         except KeyError:
             if not all(isinstance(x, str) for x in (name, description)):
                 raise TypeError
             if not isinstance(si_coherent_unit, UnitBase):
                 raise TypeError
-            collision_key = (name, description)
-            if collision_key in cls._symbol_collision_cache:
+            if description in cls._symbol_description_cache:
+                existing = cls._symbol_description_cache[description]
                 raise ValueError(
-                    'Cannot define new Symbol that is identical to existing Symbol except for units or assumptions'
+                    f'Cannot define new Symbol that has same description as existing Symbol "{existing}"'
                 )
 
             obj = super().__xnew__(cls, name, **assumptions)
@@ -172,77 +183,187 @@ class BaseSymbol(sympy.Symbol):
                     setattr(obj, k, v)
 
             cls._symbol_cache[cache_key] = obj
-            cls._symbol_collision_cache[collision_key] = obj
+            cls._symbol_description_cache[description] = obj
             return cls._symbol_cache[cache_key]
-
-
-    is_phys_const: bool
+        else:
+            if obj.name != name:
+                raise ValueError(
+                    'To rename Symbol, use ".rename()"; cannot rename existing, cached object using "__new__()"'
+                )
+            if subclass_attr:
+                for k, v in subclass_attr.items():
+                    if getattr(obj, k) != v:
+                        raise ValueError(
+                            f'Cannot modify "{k}" attribute of existing, cached object using "__new__()"; '
+                            f'for existing, cached object "{k}" = "{v}"'
+                        )
 
 
     def _hashable_content(self):
-        return (self.name, self.description, self.si_coherent_unit) + self._assumptions0  # type: ignore
+        return (self.description,) + self._assumptions0  # type: ignore
+
+
+    def rename(self, name: str):
+        raise NotImplementedError
 
 
 
 
 class Symbol(BaseSymbol):
-    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'subscript_template',)
+    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', 'child_template', '_children_naming_data')
+    is_vector_magnitude: bool
+    is_vector_component: bool
+    parent: Self | None
+    child_template: str
+    _children_naming_data: list[tuple[Self, Callable[..., str], tuple]]
 
-    def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, subscript_template: str | None = None, *,
-                is_vector_magnitude: bool = False, is_vector_component: bool = False, **assumptions):
-        if not isinstance(is_vector_magnitude, bool):
+
+    is_phys_const = False
+
+
+    def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, *,
+                is_vector_magnitude: bool | None = None, is_vector_component: bool | None = None,
+                parent: Self | None = None, **assumptions):
+        if not isinstance(name, str):
             raise TypeError
-        if not isinstance(is_vector_component, bool):
+        name_without_template_fields = cls._remove_template_fields_from_name(name)
+
+        if is_vector_magnitude is not None and not isinstance(is_vector_magnitude, bool):
+            raise TypeError
+        if is_vector_component is not None and not isinstance(is_vector_component, bool):
             raise TypeError
         if is_vector_magnitude and is_vector_component:
             raise ValueError
+
+        child_template: str | None = None
+
+        if cls._subscript_template_field in name:
+            if name.count(cls._subscript_template_field) > 1:
+                raise ValueError(f'Subscript template field "{cls._subscript_template_field}" can only be used once')
+            if name.startswith(cls._subscript_template_field) or name.endswith(cls._subscript_template_field):
+                raise ValueError(
+                    f'Symbol name cannot start or end with subscript template field "{cls._subscript_template_field}"'
+                )
+            child_template = name
+
+        if cls._component_template_field in name:
+            if name.count(cls._component_template_field) > 1:
+                raise ValueError(
+                    f'Vector component template field "{cls._component_template_field}" can only be used once'
+                )
+            if name.startswith(cls._component_template_field) or name.endswith(cls._component_template_field):
+                raise ValueError(
+                    'Symbol name cannot start or end with vector component template field '
+                    f'"{cls._component_template_field}"'
+                )
+            if name.split(cls._component_template_field, 1)[1].rstrip('}'):
+                raise ValueError(
+                    f'Vector component template field "{cls._component_template_field}" can only be followed '
+                    'by right curly braces "}"'
+                )
+            if is_vector_magnitude is None:
+                is_vector_magnitude = True
+            elif not is_vector_magnitude:
+                raise TypeError(
+                    'Only vector magnitudes can have a vector component '
+                    f'template field "{cls._component_template_field}"'
+                )
+            if is_vector_component is None:
+                is_vector_component = False
+            elif is_vector_component:
+                raise TypeError(
+                    'Only vector magnitudes can have a vector component '
+                    f'template field "{cls._component_template_field}"'
+                )
+            child_template = name
+        else:
+            if is_vector_magnitude is None:
+                is_vector_magnitude = False
+            if is_vector_component is None:
+                is_vector_magnitude = False
+
         # https://docs.sympy.org/latest/guides/assumptions.html
         if is_vector_magnitude:
+            if assumptions.get('extended_real', True) is not True:
+                raise ValueError
             assumptions['extended_real'] = True
+            if assumptions.get('nonnegative', True) is not True:
+                raise ValueError
             assumptions['nonnegative'] = True
         elif is_vector_component:
-            assumptions['extended_real'] = True
-        if subscript_template is not None:
-            if not isinstance(subscript_template, str):
-                raise TypeError
-            if '<sub>' not in subscript_template:
+            if assumptions.get('extended_real', True) is not True:
                 raise ValueError
+            assumptions['extended_real'] = True
+
         subclass_attr = dict(
             is_vector_magnitude = is_vector_magnitude,
             is_vector_component = is_vector_component,
-            subscript_template = subscript_template,
+            parent = parent,
+            child_template = child_template,
         )
-        return cls.__new_inner__(name, description, si_coherent_unit, subclass_attr,
+
+        return cls.__new_inner__(name_without_template_fields, description, si_coherent_unit, subclass_attr,
                                  **assumptions)
 
-    is_phys_const = False
+    _component_template_field = '<i>'
+    _subscript_template_field = '<sub>'
+    _latex_empty_formatting_patterns = (
+        r'\text{}',
+        r'\textrm{}', r'\textit{}', r'\textsf{}',
+        r'\mathrm{}', r'\mathit{}', r'\mathsf{}',
+    )
+    _latex_math_spaces = (r'\;', r'\:', r'\,', r'\!')
+    _subscript_space = r'\,'
+    _pre_vector_component_space = r'\,'
+
+    @classmethod
+    def _remove_template_fields_from_name(cls, name: str) -> str:
+        name = name.replace(cls._subscript_template_field, '').replace(cls._component_template_field, '')
+        while True:
+            if name.endswith(r'_{}'):
+                name = name[:-3]
+                continue
+            for pattern in cls._latex_empty_formatting_patterns:
+                if pattern in name:
+                    name = name.replace(pattern, '')
+                    break
+            else:
+                break
+        return name
 
 
     def subscript(self, subscript: str | int, description: str | None = None,
                   description_prefix: str | int | None = None, description_suffix: str | int | None = None,
                   subscriptable: bool = True, style: Literal['normal', 'italic', 'bold'] | None = None) -> Self:
-        if self.subscript_template is None:
-            raise TypeError('Subscripting is only supported when a subscript template is defined')
+        if self.child_template is None or self._subscript_template_field not in self.child_template:
+            raise TypeError(
+                'Subscripting is only supported for Symbols that are defined with names including '
+                f'a template field "{self._subscript_template_field}"'
+            )
 
         if isinstance(subscript, int):
-            subscript_formatted = str(subscript)
-        elif isinstance(subscript, str):
-            if not subscript:
-                raise ValueError
-            if style is None:
-                subscript_formatted = subscript
-            elif style == 'normal':
-                subscript_formatted = rf'\text{{{subscript}}}'
-            elif style == 'italic':
-                subscript_formatted = rf'\text{{\textit{{{subscript}}}}}'
-            elif style == 'bold':
-                subscript_formatted = rf'\text{{\textbf{{{subscript}}}}}'
-            else:
-                raise TypeError
+            subscript = str(subscript)
+        elif not isinstance(subscript, str):
+            raise TypeError
+        elif not subscript:
+            raise ValueError
+
+        if style is None:
+            subscript_formatted = subscript
+        elif style == 'normal':
+            subscript_formatted = rf'\text{{{subscript}}}'
+        elif style == 'italic':
+            subscript_formatted = rf'\text{{\textit{{{subscript}}}}}'
+        elif style == 'bold':
+            subscript_formatted = rf'\text{{\textbf{{{subscript}}}}}'
         else:
+            if isinstance(style, str):
+                raise ValueError
             raise TypeError
 
-        name = self.subscript_template.replace('<sub>', subscript_formatted).replace('<i>', '')
+        if not isinstance(subscriptable, bool):
+            raise TypeError
+        name = self._derive_subscripted_name(self.child_template, subscript_formatted, subscriptable)
         if all(x is None for x in (description, description_prefix, description_suffix)):
             description = f'{subscript}: {self.description}'
         elif isinstance(description, str) and all(x is None for x in (description_prefix, description_suffix)):
@@ -262,16 +383,30 @@ class Symbol(BaseSymbol):
         else:
             raise TypeError
 
-        if not isinstance(subscriptable, bool):
-            raise TypeError
-        if subscriptable:
-            subscript_template = self.subscript_template.replace('<sub>', rf'{subscript}\,<sub>')
-        else:
-            subscript_template = None
+        obj = type(self)(name, description, self.si_coherent_unit,
+                        is_vector_magnitude=self.is_vector_magnitude, is_vector_component=self.is_vector_component,
+                        parent=self, **self._assumptions_orig)  # type: ignore
+        try:
+            _children_naming_data = self._children_naming_data
+        except AttributeError:
+            self._children_naming_data = []
+            _children_naming_data = self._children_naming_data
+        _children_naming_data.append((obj, self._derive_subscripted_name, (subscript_formatted, subscriptable)))
+        return obj
 
-        return type(self)(name, description, self.si_coherent_unit, subscript_template,
-                          is_vector_magnitude=self.is_vector_magnitude, is_vector_component=self.is_vector_component,
-                          **self._assumptions_orig)  # type: ignore
+    @classmethod
+    def _derive_subscripted_name(cls, child_template: str, subscript_formatted: str, subscriptable: bool) -> str:
+        before, after = child_template.split(cls._subscript_template_field)
+        if not before.endswith('{') and not any(before.endswith(space) for space in cls._latex_math_spaces):
+            before += cls._subscript_space
+        if (not after.startswith('}') and not any(after.startswith(space) for space in cls._latex_math_spaces) and
+                not after.startswith(cls._component_template_field)):
+            after = cls._subscript_space + after
+        if subscriptable:
+            name = before + subscript_formatted + cls._subscript_template_field + after
+        else:
+            name = before + subscript_formatted + after
+        return name
 
 
     # https://en.wikipedia.org/wiki/Coherence_(units_of_measurement)
@@ -307,27 +442,39 @@ class Symbol(BaseSymbol):
 
     def _components(self, coords: tuple[str, str, str]) -> tuple[Self, Self, Self]:
         if not self.is_vector_magnitude:
-            raise TypeError('Can only derive vector component symbols from a vector magnitude')
-        if not self.subscript_template or '<i>' not in self.subscript_template:
+            raise TypeError('Can only derive vector components from a vector magnitude')
+        if not self.child_template or self._component_template_field not in self.child_template:
             raise ValueError(
-                'Can only derive vector component symbols from a vector magnitude '
-                'with a `subscript_template` that includes an <i> field'
+                'Can only derive vector components from a vector magnitude '
+                f'whose name contains a vector component template field "{self._component_template_field}"'
             )
         components = []
-        for i in coords:
-            i_description = self._component_description_symbol_map.get(i, i)
+        for coord in coords:
+            coord_description = self._component_description_symbol_map.get(coord, coord)
             if self.description.endswith(' magnitude'):
-                description = f'{self.description.rsplit(' magnitude', 1)[0]} in {i_description}'
+                description = f'{self.description[:-len(" magnitude")]} in {coord_description}'
             else:
-                description = f'{self.description} in {i_description}'
-            components.append(type(self)(
-                self.subscript_template.replace('<sub>','').replace('<i>', i),
-                description,
-                self.si_coherent_unit,
-                is_vector_component=True,
-                subscript_template=self.subscript_template.replace('<i>', ''),
-            ))
+                description = f'{self.description} in {coord_description}'
+            name = self._derive_component_name(self.child_template, coord)
+            obj = type(self)(name, description, self.si_coherent_unit, is_vector_component=True, parent=self)
+            components.append(obj)
+            try:
+                _children_naming_data = self._children_naming_data
+            except AttributeError:
+                self._children_naming_data = []
+                _children_naming_data = self._children_naming_data
+            _children_naming_data.append((obj, self._derive_component_name, (coord,)))
         return tuple(components)
+
+    @classmethod
+    def _derive_component_name(cls, child_template: str, coord: str) -> str:
+        before, after = child_template.split(cls._component_template_field)
+        if (not before.endswith('{') and not any(before.endswith(space) for space in cls._latex_math_spaces)
+                and not before.endswith(cls._subscript_template_field)):
+            before += cls._subscript_space
+        # Don't need to check `after` for space insertion, since it can only
+        # be braces `}`; vector component must be final element of name
+        return before + coord + after
 
     def cartesian_components(self) -> tuple[Self, Self, Self]:
         return self._components(('x', 'y', 'z'))
@@ -336,10 +483,40 @@ class Symbol(BaseSymbol):
         return self._components((r'r', r'\theta', r'\phi'))
 
 
+    def rename(self, name: str):
+        if self.parent is not None:
+            raise TypeError(
+                f'Cannot rename a symbol whose name is based on another symbol (name based on "{self.parent}")'
+            )
+        if self.child_template.count(self._subscript_template_field) != name.count(self._subscript_template_field):
+            raise ValueError(
+                'Cannot rename a symbol unless the new name and old name either both contain or both do not contain '
+                f'the subscript template field "{self._subscript_template_field}"'
+            )
+        if self.child_template.count(self._component_template_field) != name.count(self._component_template_field):
+            raise ValueError(
+                'Cannot rename a symbol unless the new name and old name either both contain or both do not contain '
+                f'the vector component template field "{self._component_template_field}"'
+            )
+        self._rename(name)
+
+    def _rename(self, name: str):
+        self.name = self._remove_template_fields_from_name(name)
+        self.child_template = name
+        try:
+            _children_naming_data = self._children_naming_data
+        except AttributeError:
+            return
+        for symbol, func, other_args in _children_naming_data:
+            symbol._rename(func(name, *other_args))
+
+
 
 
 class ConstSymbol(BaseSymbol):
     __slots__ = ('quantity',)
+
+    is_phys_const = True
 
     def __new__(cls, name: str, description: str, quantity: str | Quantity, **assumptions):
         if isinstance(quantity, str):
@@ -348,8 +525,6 @@ class ConstSymbol(BaseSymbol):
             raise TypeError
         return cls.__new_inner__(name, description, quantity.unit, dict(quantity=quantity),  # type: ignore
                                  **assumptions)
-
-    is_phys_const = True
 
     @property
     def value(self) -> float:
@@ -364,6 +539,9 @@ class ConstSymbol(BaseSymbol):
 
     def as_quantity(self) -> Quantity:
         return self.quantity
+
+    def rename(self, name: str):
+        self.name = name
 
 
 
@@ -440,6 +618,9 @@ class WrappedSymbol(WrappedExpr):
     def spherical_polar_components(self) -> tuple[Self, Self, Self]:
         return tuple(type(self)(x) for x in self.expr.spherical_polar_components())  # type: ignore
 
+    def rename(self, *args, **kwargs):
+        self.expr.rename(*args, **kwargs)
+
 
 
 
@@ -467,3 +648,6 @@ class WrappedConstSymbol(WrappedExpr):
     @classmethod
     def wrap_compound_expr_class(cls, *args, **kwargs):
         raise NotImplementedError
+
+    def rename(self, *args, **kwargs):
+        self.expr.rename(*args, **kwargs)
