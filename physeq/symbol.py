@@ -10,11 +10,12 @@
 
 from __future__ import annotations
 
+import random
 import sympy
 from astropy.units import Quantity
 from astropy.units.core import UnitBase
-from typing import Any, Callable, Literal, Self
 from sympy.core.assumptions import check_assumptions as sympy_check_assumptions
+from typing import Any, Callable, Literal, Self
 from . import exprorder
 
 
@@ -409,32 +410,6 @@ class Symbol(BaseSymbol):
         return name
 
 
-    # https://en.wikipedia.org/wiki/Coherence_(units_of_measurement)
-    def quantity_value_in_si_coherent_unit(self, quantity: str | Quantity) -> float:
-        if isinstance(quantity, str):
-            quantity = Quantity(quantity)
-        elif not isinstance(quantity, Quantity):
-            raise TypeError
-        return float(quantity.to(self.si_coherent_unit).value)
-
-    def quantity_from_value_in_si_coherent_unit(self, value: float) -> Quantity:
-        value = float(value)
-        return Quantity(value, self.si_coherent_unit)
-
-    def compatible_values_from_set(self, solnset: sympy.Set) -> sympy.FiniteSet:
-        '''
-        Filter a set to include only values that are compatible with SymPy
-        assumptions.
-        '''
-        if not isinstance(solnset, sympy.Set):
-            raise TypeError
-        if not isinstance(solnset, sympy.FiniteSet):
-            raise NotImplementedError
-        # Use `.is_number` instead of `.is_Number` to handle `NumberSymbol`
-        # objects like `pi`.
-        return sympy.FiniteSet(*(x for x in solnset if sympy_check_assumptions(x, self) is not False), evaluate=False)
-
-
     _component_description_symbol_map: dict[str, str] = {
         r'\theta': 'θ',
         r'\phi': 'φ',
@@ -509,6 +484,43 @@ class Symbol(BaseSymbol):
             return
         for symbol, func, other_args in _children_naming_data:
             symbol._rename(func(name, *other_args))
+
+
+        # https://en.wikipedia.org/wiki/Coherence_(units_of_measurement)
+    def quantity_value_in_si_coherent_unit(self, quantity: str | Quantity) -> float:
+        if isinstance(quantity, str):
+            quantity = Quantity(quantity)
+        elif not isinstance(quantity, Quantity):
+            raise TypeError
+        return float(quantity.to(self.si_coherent_unit).value)
+
+    def quantity_from_value_in_si_coherent_unit(self, value: float) -> Quantity:
+        value = float(value)
+        return Quantity(value, self.si_coherent_unit)
+
+    def compatible_values_from_set(self, solnset: sympy.Set) -> sympy.FiniteSet:
+        '''
+        Filter a set to include only values that are compatible with SymPy
+        assumptions.
+        '''
+        if not isinstance(solnset, sympy.Set):
+            raise TypeError
+        if not isinstance(solnset, sympy.FiniteSet):
+            raise NotImplementedError
+        return sympy.FiniteSet(*(x for x in solnset if sympy_check_assumptions(x, self) is not False), evaluate=False)
+
+
+    def randrange_quantity(self, *args, **kwargs) -> Quantity:
+        return Quantity(random.randrange(*args, **kwargs), self.si_coherent_unit)
+
+    def randint_quantity(self, *args) -> Quantity:
+        return Quantity(random.randint(*args), self.si_coherent_unit)
+
+    def choice_quantity(self, seq) -> Quantity:
+        return Quantity(random.choice(seq), self.si_coherent_unit)
+
+    def uniform_quantity(self, *args) -> Quantity:
+        return Quantity(random.uniform(*args), self.si_coherent_unit)
 
 
 
@@ -600,6 +612,15 @@ class WrappedSymbol(WrappedExpr):
     def subscript(self, *args, **kwargs) -> Self:
         return type(self)(self.expr.subscript(*args, **kwargs))
 
+    def cartesian_components(self) -> tuple[Self, Self, Self]:
+        return tuple(type(self)(x) for x in self.expr.cartesian_components())  # type: ignore
+
+    def spherical_polar_components(self) -> tuple[Self, Self, Self]:
+        return tuple(type(self)(x) for x in self.expr.spherical_polar_components())  # type: ignore
+
+    def rename(self, *args, **kwargs):
+        self.expr.rename(*args, **kwargs)
+
     def quantity_value_in_si_coherent_unit(self, *args, **kwargs) -> float:
         args = self._unwrap_args(args)
         return self.expr.quantity_value_in_si_coherent_unit(*args, **kwargs)
@@ -612,14 +633,17 @@ class WrappedSymbol(WrappedExpr):
         args = self._unwrap_args(args)
         return self.expr.compatible_values_from_set(*args, **kwargs)
 
-    def cartesian_components(self) -> tuple[Self, Self, Self]:
-        return tuple(type(self)(x) for x in self.expr.cartesian_components())  # type: ignore
+    def randrange_quantity(self, *args, **kwargs) -> Quantity:
+        return self.expr.randrange_quantity(*args, **kwargs)
 
-    def spherical_polar_components(self) -> tuple[Self, Self, Self]:
-        return tuple(type(self)(x) for x in self.expr.spherical_polar_components())  # type: ignore
+    def randint_quantity(self, *args) -> Quantity:
+        return self.expr.randint_quantity(*args)
 
-    def rename(self, *args, **kwargs):
-        self.expr.rename(*args, **kwargs)
+    def choice_quantity(self, seq) -> Quantity:
+        return self.expr.choice_quantity(seq)
+
+    def uniform_quantity(self, *args) -> Quantity:
+        return self.expr.uniform_quantity(*args)
 
 
 
