@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import random
 import sympy
-from astropy.units import Quantity
+from astropy.units import meter, radian, second, Quantity
 from astropy.units.core import UnitBase
 from sympy.core.assumptions import check_assumptions as sympy_check_assumptions
 from typing import Any, Callable, Literal, Self
@@ -24,6 +24,8 @@ from . import exprorder
 def translate_xreplace_rule(
     raw_rule: dict[sympy.Symbol | exprorder.WrappedExpr, sympy.Expr | Quantity | int | float],
     check_assumptions: bool = True,
+    check_value_constraints: bool = True,
+    strict_symbols: bool = True,
     strict_quantities: bool = True,
 ) -> dict[sympy.Symbol, sympy.Expr | int | float]:
     '''
@@ -33,6 +35,9 @@ def translate_xreplace_rule(
     If `check_assumptions`:  check that a symbol's assumptions are
     compatible with its replacement value.
 
+    If `check_value_constraints`:  check that a symbol's value constraints
+    are satisfied (this goes beyond assumptions).
+
     If `strict_quantities`:  when a replacement value is an
     `astropy.units.Quantity`, require the symbol to be a PhysEq `Symbol`
     with compatible units.
@@ -41,7 +46,13 @@ def translate_xreplace_rule(
     for k, v in raw_rule.items():
         if isinstance(k, exprorder.WrappedExpr):
             k = k.expr
-        if not isinstance(k, sympy.Symbol):
+        if strict_symbols:
+            if not isinstance(k, Symbol):
+                raise TypeError(
+                    'Keys must be instances of physeq.Symbol; '
+                    'sympy.Symbol is not accepted when "strict_symbols = True"  (default)'
+                )
+        elif not isinstance(k, sympy.Symbol):
             raise TypeError
         if isinstance(v, exprorder.WrappedExpr):
             v = v.expr
@@ -61,6 +72,10 @@ def translate_xreplace_rule(
             raise TypeError
         if check_assumptions and sympy_check_assumptions(v, k) is False:
             raise TypeError(f'SymPy assumptions for "{k}" are incompatible with replacement value "{v}"')
+        if check_value_constraints and isinstance(k, Symbol) and k.value_constraints is not None:
+            if ((isinstance(v, (int, float)) and not k.value_constraints(v)) or
+                    (isinstance(v, sympy.Expr) and v.is_number and not k.value_constraints(v.n()))):
+                raise TypeError(f'"value_constraints" for "{k}" are incompatible with replacement value "{v}"')
         rule[k] = v
     return rule
 
@@ -69,6 +84,8 @@ def translate_numerical_xreplace_rule(
     raw_rule: dict[sympy.Symbol | exprorder.WrappedExpr,
                     sympy.Number | sympy.NumberSymbol | Quantity | ConstSymbol | int | float],
     check_assumptions: bool = True,
+    check_value_constraints: bool = True,
+    strict_symbols: bool = True,
     strict_quantities: bool = True,
     evalf_number_symbol: bool = False,
     unevaluated: bool = False,
@@ -81,6 +98,9 @@ def translate_numerical_xreplace_rule(
     If `check_assumptions`:  check that a symbol's assumptions are
     compatible with its replacement value.
 
+    If `check_value_constraints`:  check that a symbol's value constraints
+    are satisfied (this goes beyond assumptions).
+
     If `strict_quantities`:  when a replacement value is an
     `astropy.units.Quantity`, require the symbol to be a PhysEq `Symbol`
     with compatible units.
@@ -89,7 +109,13 @@ def translate_numerical_xreplace_rule(
     for k, v in raw_rule.items():
         if isinstance(k, exprorder.WrappedExpr):
             k = k.expr
-        if not isinstance(k, sympy.Symbol):
+        if strict_symbols:
+            if not isinstance(k, Symbol):
+                raise TypeError(
+                    'Keys must be instances of physeq.Symbol; '
+                    'sympy.Symbol is not accepted when "strict_symbols = True" (default)'
+                )
+        elif not isinstance(k, sympy.Symbol):
             raise TypeError
         if isinstance(v, exprorder.WrappedExpr):
             v = v.expr
@@ -124,6 +150,10 @@ def translate_numerical_xreplace_rule(
             raise TypeError
         if check_assumptions and sympy_check_assumptions(v, k) is False:
             raise TypeError(f'SymPy assumptions for "{k}" are incompatible with replacement value "{v}"')
+        if check_value_constraints and isinstance(k, Symbol) and k.value_constraints is not None:
+            if ((isinstance(v, (int, float)) and not k.value_constraints(v)) or
+                    (isinstance(v, sympy.Expr) and v.is_number and not k.value_constraints(v.n()))):
+                raise TypeError(f'"value_constraints" for "{k}" are incompatible with replacement value "{v}"')
         if unevaluated:
             rule[k] = exprorder.OrderUnevaluatedExpr(sympy.sympify(v))
         else:
@@ -211,12 +241,14 @@ class BaseSymbol(sympy.Symbol):
 
 
 class Symbol(BaseSymbol):
-    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', 'child_template', '_children_naming_data')
+    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', 'child_template', '_children_naming_data',
+                 'value_constraints')
     is_vector_magnitude: bool
     is_vector_component: bool
     parent: Self | None
     child_template: str
     _children_naming_data: list[tuple[Self, Callable[..., str], tuple]]
+    value_constraints: Callable[[int | float], bool] | None
 
 
     is_phys_const = False
@@ -224,7 +256,8 @@ class Symbol(BaseSymbol):
 
     def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, *,
                 is_vector_magnitude: bool | None = None, is_vector_component: bool | None = None,
-                parent: Self | None = None, **assumptions):
+                parent: Self | None = None, value_constraints: Callable[[int | float], bool] | None = None,
+                **assumptions):
         if not isinstance(name, str):
             raise TypeError
         name_without_template_fields = cls._remove_template_fields_from_name(name)
@@ -296,11 +329,15 @@ class Symbol(BaseSymbol):
                 raise ValueError
             assumptions['extended_real'] = True
 
+        if value_constraints is not None and not callable(value_constraints):
+            raise TypeError
+
         subclass_attr = dict(
             is_vector_magnitude = is_vector_magnitude,
             is_vector_component = is_vector_component,
             parent = parent,
             child_template = child_template,
+            value_constraints = value_constraints,
         )
 
         return cls.__new_inner__(name_without_template_fields, description, si_coherent_unit, subclass_attr,
@@ -386,7 +423,8 @@ class Symbol(BaseSymbol):
 
         obj = type(self)(name, description, self.si_coherent_unit,
                         is_vector_magnitude=self.is_vector_magnitude, is_vector_component=self.is_vector_component,
-                        parent=self, **self._assumptions_orig)  # type: ignore
+                        parent=self, value_constraints=self.value_constraints,
+                        **self._assumptions_orig)  # type: ignore
         try:
             _children_naming_data = self._children_naming_data
         except AttributeError:
@@ -410,12 +448,23 @@ class Symbol(BaseSymbol):
         return name
 
 
-    _component_description_symbol_map: dict[str, str] = {
+    _cartesian_coords = (r'x', r'y', r'z')
+    _spherical_polar_coords = (r'r', r'\theta', r'\phi')
+    _polar_coords = (r'r', r'\theta')
+    _coord_description_symbol_map: dict[str, str] = {
         r'\theta': 'θ',
         r'\phi': 'φ',
     }
 
-    def _components(self, coords: tuple[str, str, str]) -> tuple[Self, Self, Self]:
+    def _components(self, coords: tuple[str, ...],
+                    description_template: str | None = None) -> tuple[Self, ...]:
+        if description_template is None:
+            pass
+        elif isinstance(description_template, str):
+            if description_template.count(self._component_template_field) != 1:
+                raise ValueError
+        else:
+            raise TypeError
         if not self.is_vector_magnitude:
             raise TypeError('Can only derive vector components from a vector magnitude')
         if not self.child_template or self._component_template_field not in self.child_template:
@@ -423,11 +472,21 @@ class Symbol(BaseSymbol):
                 'Can only derive vector components from a vector magnitude '
                 f'whose name contains a vector component template field "{self._component_template_field}"'
             )
+        if self.value_constraints is not None:
+            raise NotImplementedError
         components = []
         for coord in coords:
-            coord_description = self._component_description_symbol_map.get(coord, coord)
-            if self.description.endswith(' magnitude'):
+            coord_description = self._coord_description_symbol_map.get(coord, coord)
+            if coords == self._spherical_polar_coords:
+                coord_description = f'{coord_description} (spherical polar)'
+            elif coords == self._polar_coords:
+                coord_description = f'{coord_description} (2D polar)'
+            if description_template is not None:
+                description = description_template.replace(self._component_template_field, coord_description)
+            elif self.description.endswith(' magnitude'):
                 description = f'{self.description[:-len(" magnitude")]} in {coord_description}'
+            elif self.description == 'speed' or self.description.endswith(' speed'):
+                description = f'{description.rsplit("speed", 1)[0]}velocity in {coord_description}'
             else:
                 description = f'{self.description} in {coord_description}'
             name = self._derive_component_name(self.child_template, coord)
@@ -451,11 +510,66 @@ class Symbol(BaseSymbol):
         # be braces `}`; vector component must be final element of name
         return before + coord + after
 
-    def cartesian_components(self) -> tuple[Self, Self, Self]:
-        return self._components(('x', 'y', 'z'))
+    def cartesian_components(self, description_template: str | None = None) -> tuple[Self, Self, Self]:
+        return self._components(self._cartesian_coords, description_template)  # type: ignore
 
-    def spherical_polar_components(self) -> tuple[Self, Self, Self]:
-        return self._components((r'r', r'\theta', r'\phi'))
+    def spherical_polar_components(self, description_template: str | None = None) -> tuple[Self, Self, Self]:
+        return self._components(self._spherical_polar_coords, description_template)  # type: ignore
+
+    def polar_components(self, description_template: str | None = None) -> tuple[Self, Self]:
+        return self._components(self._polar_coords, description_template)  # type: ignore
+
+    @classmethod
+    def _coord_symbols_from_template(cls, coords: tuple[str, ...], name_template: str, description_template: str,
+                                     unit: UnitBase) -> tuple[Self, ...]:
+        if not isinstance(name_template, str) or not isinstance(description_template, str):
+            raise TypeError
+        if name_template.count(cls._component_template_field) != 1:
+            raise ValueError
+        if description_template.count(cls._component_template_field) != 1:
+            raise ValueError
+        if not isinstance(unit, UnitBase):
+            raise TypeError
+        if unit not in (meter, meter/second, meter/second**2):
+            raise NotImplementedError
+        coord_symbols = []
+        for coord in coords:
+            coord_description = cls._coord_description_symbol_map.get(coord, coord)
+            if coords == cls._spherical_polar_coords:
+                coord_description = f'{coord_description} (spherical polar)'
+            elif coords == cls._polar_coords:
+                coord_description = f'{coord_description} (2D polar)'
+            name = name_template.replace(cls._component_template_field, coord)
+            description = description_template.replace(cls._component_template_field, coord_description)
+            if coords == cls._cartesian_coords:
+                obj = cls(name, description, unit)
+            elif coords in (cls._spherical_polar_coords, cls._polar_coords):
+                if len(coord_symbols) == 0:
+                    obj = cls(name, description, unit, nonnegative=True)
+                else:
+                    obj = cls(name, description, unit/meter*radian)
+            else:
+                raise NotImplementedError
+            coord_symbols.append(obj)
+        return tuple(coord_symbols)
+
+    @classmethod
+    def cartesian_symbols_from_template(cls, name_template: str, description_template: str,
+                                        unit: UnitBase) -> tuple[Self, Self, Self]:
+        return cls._coord_symbols_from_template(cls._cartesian_coords, name_template, description_template,
+                                                unit)  # type: ignore
+
+    @classmethod
+    def spherical_polar_symbols_from_template(cls, name_template: str, description_template: str,
+                                              unit: UnitBase) -> tuple[Self, Self, Self]:
+        return cls._coord_symbols_from_template(cls._spherical_polar_coords, name_template, description_template,
+                                                unit)  # type: ignore
+
+    @classmethod
+    def polar_symbols_from_template(cls, name_template: str, description_template: str,
+                                    unit: UnitBase) -> tuple[Self, Self]:
+        return cls._coord_symbols_from_template(cls._polar_coords, name_template, description_template,
+                                                unit)  # type: ignore
 
 
     def rename(self, name: str):
@@ -590,12 +704,15 @@ class WrappedSymbol(WrappedExpr):
             raise TypeError
 
     @classmethod
-    def wrap_symbol_class(cls, symbol_class: type[Symbol]) -> Callable[..., Self]:
+    def wrap_symbol_class(cls, symbol_class: type[Symbol]):
         if not issubclass(symbol_class, Symbol):
             raise TypeError
-        def wrapper(*args, **kwargs):
-            return cls(symbol_class(*args, **kwargs))
-        return wrapper
+        class Wrapper(cls):
+            def __new__(sub_cls, *args, **kwargs):
+                if len(args) == 1 and not kwargs and isinstance(args[0], symbol_class):
+                    return cls(args[0])
+                return cls(symbol_class(*args, **kwargs))
+        return Wrapper
 
     @classmethod
     def wrap_atomic_expr_class(cls, *args, **kwargs):
@@ -612,11 +729,26 @@ class WrappedSymbol(WrappedExpr):
     def subscript(self, *args, **kwargs) -> Self:
         return type(self)(self.expr.subscript(*args, **kwargs))
 
-    def cartesian_components(self) -> tuple[Self, Self, Self]:
-        return tuple(type(self)(x) for x in self.expr.cartesian_components())  # type: ignore
+    def cartesian_components(self, *args, **kwargs) -> tuple[Self, Self, Self]:
+        return tuple(type(self)(x) for x in self.expr.cartesian_components(*args, **kwargs))  # type: ignore
 
-    def spherical_polar_components(self) -> tuple[Self, Self, Self]:
-        return tuple(type(self)(x) for x in self.expr.spherical_polar_components())  # type: ignore
+    def spherical_polar_components(self, *args, **kwargs) -> tuple[Self, Self, Self]:
+        return tuple(type(self)(x) for x in self.expr.spherical_polar_components(*args, **kwargs))  # type: ignore
+
+    def polar_components(self, *args, **kwargs) -> tuple[Self, Self]:
+        return tuple(type(self)(x) for x in self.expr.polar_components(*args, **kwargs))  # type: ignore
+
+    @classmethod
+    def cartesian_symbols_from_template(cls, *args, **kwargs) -> tuple[Self, Self, Self]:
+        return tuple(cls(x) for x in Symbol.cartesian_symbols_from_template(*args, **kwargs))  # type: ignore
+
+    @classmethod
+    def spherical_polar_symbols_from_template(cls, *args, **kwargs) -> tuple[Self, Self, Self]:
+        return tuple(cls(x) for x in Symbol.spherical_polar_symbols_from_template(*args, **kwargs))  # type: ignore
+
+    @classmethod
+    def polar_symbols_from_template(cls, *args, **kwargs) -> tuple[Self, Self]:
+        return tuple(cls(x) for x in Symbol.polar_symbols_from_template(*args, **kwargs))  # type: ignore
 
     def rename(self, *args, **kwargs):
         self.expr.rename(*args, **kwargs)
@@ -658,12 +790,15 @@ class WrappedConstSymbol(WrappedExpr):
             raise TypeError
 
     @classmethod
-    def wrap_const_symbol_class(cls, const_symbol_class: type[ConstSymbol]) -> Callable[..., Self]:
+    def wrap_const_symbol_class(cls, const_symbol_class: type[ConstSymbol]):
         if not issubclass(const_symbol_class, ConstSymbol):
             raise TypeError
-        def wrapper(*args, **kwargs):
-            return cls(const_symbol_class(*args, **kwargs))
-        return wrapper
+        class Wrapper(cls):
+            def __new__(sub_cls, *args, **kwargs):
+                if len(args) == 1 and not kwargs and isinstance(args[0], const_symbol_class):
+                    return cls(args[0])
+                return cls(const_symbol_class(*args, **kwargs))
+        return Wrapper
 
     @classmethod
     def wrap_atomic_expr_class(cls, *args, **kwargs):

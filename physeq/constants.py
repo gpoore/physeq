@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import astropy.constants as ac
 from astropy.units import Quantity
-from astropy.units.si import coulomb, meter, newton, second  # type: ignore
+from astropy.units.si import coulomb, meter, newton, second
 from math import pi
 from .wrapped import ConstSymbol
 
