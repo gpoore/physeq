@@ -486,7 +486,7 @@ class Symbol(BaseSymbol):
             elif self.description.endswith(' magnitude'):
                 description = f'{self.description[:-len(" magnitude")]} in {coord_description}'
             elif self.description == 'speed' or self.description.endswith(' speed'):
-                description = f'{description.rsplit("speed", 1)[0]}velocity in {coord_description}'
+                description = f'{self.description.rsplit("speed", 1)[0]}velocity in {coord_description}'
             else:
                 description = f'{self.description} in {coord_description}'
             name = self._derive_component_name(self.child_template, coord)
