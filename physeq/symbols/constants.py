@@ -14,7 +14,7 @@ import astropy.constants as ac
 from astropy.units import Quantity
 from astropy.units.si import coulomb, meter, newton, second
 from math import pi
-from .wrapped import ConstSymbol
+from ..cas.wrapped import ConstSymbol
 
 
 c = ConstSymbol(r'c', ac.c.name.lower(), ac.c)

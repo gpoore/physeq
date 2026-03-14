@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from astropy.units import kilogram
-from .wrapped import Symbol
+from ..cas.wrapped import Symbol
 
 
 m = Symbol(r'm_{<sub>}', 'mass', kilogram)

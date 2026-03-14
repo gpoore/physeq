@@ -10,8 +10,8 @@
 
 from __future__ import annotations
 
-from astropy.units.si import meter, radian, second  # type: ignore
-from .wrapped import Symbol
+from astropy.units.si import meter, second  # type: ignore
+from ..cas.wrapped import Symbol
 
 
 # speed and velocity

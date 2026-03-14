@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from astropy.units import meter
-from .wrapped import Symbol
+from ..cas.wrapped import Symbol
 
 
 # distance

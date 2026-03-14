@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from astropy.units import second
-from .wrapped import Symbol
+from ..cas.wrapped import Symbol
 
 
 t = Symbol(r't_{<sub>}', 'time', second)
