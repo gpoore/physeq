@@ -18,6 +18,7 @@ from ..cas.wrapped import ConstSymbol
 
 
 c = ConstSymbol(r'c', ac.c.name.lower(), ac.c)
-k = ConstSymbol(r'k', 'Coulomb constant', Quantity(1/(4*pi*ac.eps0), newton*meter**2/coulomb**2))
+k_e = ConstSymbol(r'<config.coulombs_constant>', "Coulomb's constant",
+                  Quantity(1/(4*pi*ac.eps0), newton*meter**2/coulomb**2))
 g = ConstSymbol(r'g', 'gravitational acceleration at surface of Earth', Quantity(9.80, meter/second**2))
 G = ConstSymbol(r'G', ac.G.name.lower(), ac.G)

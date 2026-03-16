@@ -63,7 +63,7 @@ F_spr = F.subscript(r'spr', description_prefix='spring', style='normal')
 F_spr_x, F_spr_y, F_spr_z = F_spr.cartesian_components()
 F_spr_r, F_spr_θ, F_spr_φ = _, F_spr_theta, F_spr_phi = F_spr.spherical_polar_components()
 F_spr_r_polar, F_spr_θ_polar = _, F_spr_theta_polar = F_spr.polar_components()
-k = Symbol(r'k', 'spring constant', newton/meter, r'k_{<sub>}')
+k_spr = Symbol(r'<config.spring_constant>_{<sub>}', 'spring constant', newton/meter)
 x_spr, y_spr, z_spr = [
     s.subscript('spr', description_prefix='spring', description_suffix='(origin is equilibrium)', style='normal')
     for s in (x, y, z)

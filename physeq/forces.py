@@ -14,7 +14,7 @@ from __future__ import annotations
 from .cas.wrapped import Abs, Eq
 from .symbols.constants import G, g
 from .symbols.force import ΣF, ΣF_x, ΣF_y, ΣF_sys, F_G, F_s, F_k, μ_s, μ_k, F_N, F_spr, F_spr_x, x_spr, Δx_spr
-from .symbols.force import k as k_f
+from .symbols.force import k_spr
 from .symbols.kinematics import a, a_x, a_y, a_sys
 from .symbols.mass import m, m_1, m_2, m_sys
 from .symbols.space import r
@@ -38,5 +38,5 @@ eq_kinetic_friction = Eq(F_k, μ_k*F_N)
 
 
 # Spring
-eq_spring_force_x = Eq(F_spr_x, -k_f*x_spr)
-eq_spring_force_x_magnitude = Eq(F_spr, k_f*Abs(Δx_spr))
+eq_spring_force_x = Eq(F_spr_x, -k_spr*x_spr)
+eq_spring_force_x_magnitude = Eq(F_spr, k_spr*Abs(Δx_spr))

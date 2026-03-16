@@ -9,3 +9,7 @@
 
 
 from .version import __version__, __version_info__
+
+from .configuration import Config
+config = Config()
+del Config

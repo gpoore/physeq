@@ -11,11 +11,13 @@
 from __future__ import annotations
 
 import random
+import re
 import sympy
 from astropy.units import meter, radian, second, Quantity
 from astropy.units.core import UnitBase
 from sympy.core.assumptions import check_assumptions as sympy_check_assumptions
 from typing import Any, Callable, Literal, Self
+from .. import config
 from . import exprorder
 
 
@@ -172,7 +174,10 @@ class BaseSymbol(sympy.Symbol):
     # Reference:
     #   https://github.com/sympy/sympy/blob/master/sympy/core/symbol.py
 
-    __slots__ = ('description', 'si_coherent_unit')
+    __slots__ = ('description', 'name_template', 'si_coherent_unit')
+    description: str
+    name_template: str
+    si_coherent_unit: UnitBase
     _symbol_cache: dict[tuple, Self] = {}
     _symbol_description_cache: dict[str, Self] = {}
 
@@ -180,14 +185,14 @@ class BaseSymbol(sympy.Symbol):
     is_phys_const: bool
 
 
-    def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, **assumptions):
-        if cls is BaseSymbol:
-            raise NotImplementedError
-        return cls.__new_inner__(name, description, si_coherent_unit, **assumptions)
+    def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, **assumptions) -> Self:
+        raise NotImplementedError
+        # <code>
+        # return cls.__new_inner__(...)
 
     @classmethod
-    def __new_inner__(cls, name: str, description: str, si_coherent_unit: UnitBase,
-                      subclass_attr: dict[str, Any] | None, **assumptions):
+    def __new_inner__(cls, name: str, name_template: str, description: str, si_coherent_unit: UnitBase,
+                      subclass_attr: dict[str, Any] | None, **assumptions) -> Self:
         # https://docs.sympy.org/latest/guides/assumptions.html
         assumptions.setdefault('extended_real', True)
         assumptions_tuple = tuple(sorted(assumptions.items()))
@@ -196,7 +201,7 @@ class BaseSymbol(sympy.Symbol):
         try:
             obj = cls._symbol_cache[cache_key]
         except KeyError:
-            if not all(isinstance(x, str) for x in (name, description)):
+            if not all(isinstance(x, str) for x in (name, name_template, description)):
                 raise TypeError
             if not isinstance(si_coherent_unit, UnitBase):
                 raise TypeError
@@ -208,16 +213,18 @@ class BaseSymbol(sympy.Symbol):
 
             obj = super().__xnew__(cls, name, **assumptions)
             obj.description = description
+            obj.name_template = name_template
             obj.si_coherent_unit = si_coherent_unit
             if subclass_attr:
                 for k, v in subclass_attr.items():
                     setattr(obj, k, v)
+            obj._register_config_template_fields(name_template)
 
             cls._symbol_cache[cache_key] = obj
             cls._symbol_description_cache[description] = obj
             return cls._symbol_cache[cache_key]
         else:
-            if obj.name != name:
+            if obj.name != name or obj.name_template != name_template:
                 raise ValueError(
                     'To rename Symbol, use ".rename()"; cannot rename existing, cached object using "__new__()"'
                 )
@@ -228,6 +235,7 @@ class BaseSymbol(sympy.Symbol):
                             f'Cannot modify "{k}" attribute of existing, cached object using "__new__()"; '
                             f'for existing, cached object "{k}" = "{v}"'
                         )
+            return obj
 
 
     def _hashable_content(self):
@@ -238,15 +246,62 @@ class BaseSymbol(sympy.Symbol):
         raise NotImplementedError
 
 
+    _latex_empty_formatting_patterns = (
+        r'\text{}',
+        r'\textrm{}', r'\textit{}', r'\textsf{}',
+        r'\mathrm{}', r'\mathit{}', r'\mathsf{}',
+    )
+
+    _config_template_field_re = re.compile(r'<config\.(.+?)>(.*)')
+    _template_field_re = re.compile(r'<(.*?)>')
+    _config_subscript_space = r'\,'
+
+    @classmethod
+    def _config_template_field_replacer(cls, match: re.Match) -> str:
+        try:
+            replacement = getattr(config, match.group(1))
+            if not isinstance(replacement, str):
+                raise TypeError
+        except (AttributeError, TypeError):
+            raise AttributeError(f'PhysEq config does not have attribute "{match.group(1)}"')
+        after = match.group(2)
+        if '_' in replacement and after.startswith('_{') and after.endswith('}'):
+            replacement_main, replacement_sub = replacement.split('_', 1)
+            if replacement_main.count('{') == replacement_main.count('}'):
+                return rf'{replacement_main}_{{{replacement_sub}{cls._config_subscript_space}{after[2:-1]}}}'
+        return f'{replacement}{after}'
+
+    @classmethod
+    def _process_template_fields_in_name(cls, name: str) -> str:
+        while True:
+            if name.endswith(r'_{}'):
+                name = name[:-3]
+                continue
+            for pattern in cls._latex_empty_formatting_patterns:
+                if pattern in name:
+                    name = name.replace(pattern, '')
+                    break
+            else:
+                break
+        if '<' in name and '>' in name:
+            name = cls._config_template_field_re.sub(lambda x: cls._config_template_field_replacer(x), name)
+            unknown_match = cls._template_field_re.search(name)
+            if unknown_match is not None:
+                raise ValueError(f'Symbol name "{name}" contains unknown template field "{unknown_match.group(1)}"')
+        return name
+
+    def _register_config_template_fields(self, name_with_template_fields: str):
+        for match in self._config_template_field_re.finditer(name_with_template_fields):
+            config.register_symbol(self, match.group(1))
+
+
 
 
 class Symbol(BaseSymbol):
-    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', 'child_template', '_children_naming_data',
-                 'value_constraints')
+    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', '_children_naming_data', 'value_constraints')
     is_vector_magnitude: bool
     is_vector_component: bool
     parent: Self | None
-    child_template: str
     _children_naming_data: list[tuple[Self, Callable[..., str], tuple]]
     value_constraints: Callable[[int | float], bool] | None
 
@@ -257,10 +312,10 @@ class Symbol(BaseSymbol):
     def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, *,
                 is_vector_magnitude: bool | None = None, is_vector_component: bool | None = None,
                 parent: Self | None = None, value_constraints: Callable[[int | float], bool] | None = None,
-                **assumptions):
+                **assumptions) -> Self:
         if not isinstance(name, str):
             raise TypeError
-        name_without_template_fields = cls._remove_template_fields_from_name(name)
+        name_without_template_fields = cls._process_template_fields_in_name(name)
 
         if is_vector_magnitude is not None and not isinstance(is_vector_magnitude, bool):
             raise TypeError
@@ -269,8 +324,6 @@ class Symbol(BaseSymbol):
         if is_vector_magnitude and is_vector_component:
             raise ValueError
 
-        child_template: str | None = None
-
         if cls._subscript_template_field in name:
             if name.count(cls._subscript_template_field) > 1:
                 raise ValueError(f'Subscript template field "{cls._subscript_template_field}" can only be used once')
@@ -278,8 +331,6 @@ class Symbol(BaseSymbol):
                 raise ValueError(
                     f'Symbol name cannot start or end with subscript template field "{cls._subscript_template_field}"'
                 )
-            child_template = name
-
         if cls._component_template_field in name:
             if name.count(cls._component_template_field) > 1:
                 raise ValueError(
@@ -309,7 +360,6 @@ class Symbol(BaseSymbol):
                     'Only vector magnitudes can have a vector component '
                     f'template field "{cls._component_template_field}"'
                 )
-            child_template = name
         else:
             if is_vector_magnitude is None:
                 is_vector_magnitude = False
@@ -336,44 +386,34 @@ class Symbol(BaseSymbol):
             is_vector_magnitude = is_vector_magnitude,
             is_vector_component = is_vector_component,
             parent = parent,
-            child_template = child_template,
             value_constraints = value_constraints,
         )
 
-        return cls.__new_inner__(name_without_template_fields, description, si_coherent_unit, subclass_attr,
+        return cls.__new_inner__(name_without_template_fields, name, description, si_coherent_unit, subclass_attr,
                                  **assumptions)
+
 
     _component_template_field = '<i>'
     _subscript_template_field = '<sub>'
-    _latex_empty_formatting_patterns = (
-        r'\text{}',
-        r'\textrm{}', r'\textit{}', r'\textsf{}',
-        r'\mathrm{}', r'\mathit{}', r'\mathsf{}',
-    )
     _latex_math_spaces = (r'\;', r'\:', r'\,', r'\!')
     _subscript_space = r'\,'
     _pre_vector_component_space = r'\,'
 
     @classmethod
-    def _remove_template_fields_from_name(cls, name: str) -> str:
+    def _process_template_fields_in_name(cls, name: str) -> str:
         name = name.replace(cls._subscript_template_field, '').replace(cls._component_template_field, '')
-        while True:
-            if name.endswith(r'_{}'):
-                name = name[:-3]
-                continue
-            for pattern in cls._latex_empty_formatting_patterns:
-                if pattern in name:
-                    name = name.replace(pattern, '')
-                    break
-            else:
-                break
-        return name
+        return super()._process_template_fields_in_name(name)
+
+
+    def _register_config_template_fields(self, name_with_template_fields: str):
+        if self.parent is None:
+            super()._register_config_template_fields(name_with_template_fields)
 
 
     def subscript(self, subscript: str | int, description: str | None = None,
                   description_prefix: str | int | None = None, description_suffix: str | int | None = None,
                   subscriptable: bool = True, style: Literal['normal', 'italic', 'bold'] | None = None) -> Self:
-        if self.child_template is None or self._subscript_template_field not in self.child_template:
+        if self.name_template is None or self._subscript_template_field not in self.name_template:
             raise TypeError(
                 'Subscripting is only supported for Symbols that are defined with names including '
                 f'a template field "{self._subscript_template_field}"'
@@ -401,7 +441,7 @@ class Symbol(BaseSymbol):
 
         if not isinstance(subscriptable, bool):
             raise TypeError
-        name = self._derive_subscripted_name(self.child_template, subscript_formatted, subscriptable)
+        name = self._derive_subscripted_name(self.name_template, subscript_formatted, subscriptable)
         if all(x is None for x in (description, description_prefix, description_suffix)):
             description = f'{subscript}: {self.description}'
         elif isinstance(description, str) and all(x is None for x in (description_prefix, description_suffix)):
@@ -434,11 +474,11 @@ class Symbol(BaseSymbol):
         return obj
 
     @classmethod
-    def _derive_subscripted_name(cls, child_template: str, subscript_formatted: str, subscriptable: bool) -> str:
-        before, after = child_template.split(cls._subscript_template_field)
-        if not before.endswith('{') and not any(before.endswith(space) for space in cls._latex_math_spaces):
+    def _derive_subscripted_name(cls, name_template: str, subscript_formatted: str, subscriptable: bool) -> str:
+        before, after = name_template.split(cls._subscript_template_field)
+        if not before.endswith('{') and not before.endswith(cls._latex_math_spaces):
             before += cls._subscript_space
-        if (not after.startswith('}') and not any(after.startswith(space) for space in cls._latex_math_spaces) and
+        if (not after.startswith('}') and not after.startswith(cls._latex_math_spaces) and
                 not after.startswith(cls._component_template_field)):
             after = cls._subscript_space + after
         if subscriptable:
@@ -467,7 +507,7 @@ class Symbol(BaseSymbol):
             raise TypeError
         if not self.is_vector_magnitude:
             raise TypeError('Can only derive vector components from a vector magnitude')
-        if not self.child_template or self._component_template_field not in self.child_template:
+        if not self.name_template or self._component_template_field not in self.name_template:
             raise ValueError(
                 'Can only derive vector components from a vector magnitude '
                 f'whose name contains a vector component template field "{self._component_template_field}"'
@@ -489,7 +529,7 @@ class Symbol(BaseSymbol):
                 description = f'{self.description.rsplit("speed", 1)[0]}velocity in {coord_description}'
             else:
                 description = f'{self.description} in {coord_description}'
-            name = self._derive_component_name(self.child_template, coord)
+            name = self._derive_component_name(self.name_template, coord)
             obj = type(self)(name, description, self.si_coherent_unit, is_vector_component=True, parent=self)
             components.append(obj)
             try:
@@ -501,8 +541,8 @@ class Symbol(BaseSymbol):
         return tuple(components)
 
     @classmethod
-    def _derive_component_name(cls, child_template: str, coord: str) -> str:
-        before, after = child_template.split(cls._component_template_field)
+    def _derive_component_name(cls, name_template: str, coord: str) -> str:
+        before, after = name_template.split(cls._component_template_field)
         if (not before.endswith('{') and not any(before.endswith(space) for space in cls._latex_math_spaces)
                 and not before.endswith(cls._subscript_template_field)):
             before += cls._subscript_space
@@ -577,12 +617,12 @@ class Symbol(BaseSymbol):
             raise TypeError(
                 f'Cannot rename a symbol whose name is based on another symbol (name based on "{self.parent}")'
             )
-        if self.child_template.count(self._subscript_template_field) != name.count(self._subscript_template_field):
+        if self.name_template.count(self._subscript_template_field) != name.count(self._subscript_template_field):
             raise ValueError(
                 'Cannot rename a symbol unless the new name and old name either both contain or both do not contain '
                 f'the subscript template field "{self._subscript_template_field}"'
             )
-        if self.child_template.count(self._component_template_field) != name.count(self._component_template_field):
+        if self.name_template.count(self._component_template_field) != name.count(self._component_template_field):
             raise ValueError(
                 'Cannot rename a symbol unless the new name and old name either both contain or both do not contain '
                 f'the vector component template field "{self._component_template_field}"'
@@ -590,8 +630,9 @@ class Symbol(BaseSymbol):
         self._rename(name)
 
     def _rename(self, name: str):
-        self.name = self._remove_template_fields_from_name(name)
-        self.child_template = name
+        self.name = self._process_template_fields_in_name(name)
+        self.name_template = name
+        self._register_config_template_fields(name)
         try:
             _children_naming_data = self._children_naming_data
         except AttributeError:
@@ -644,13 +685,14 @@ class ConstSymbol(BaseSymbol):
 
     is_phys_const = True
 
-    def __new__(cls, name: str, description: str, quantity: str | Quantity, **assumptions):
+    def __new__(cls, name: str, description: str, quantity: str | Quantity, **assumptions) -> Self:
         if isinstance(quantity, str):
             quantity = Quantity(quantity)
         elif not isinstance(quantity, Quantity):
             raise TypeError
-        return cls.__new_inner__(name, description, quantity.unit, dict(quantity=quantity),  # type: ignore
-                                 **assumptions)
+        name_without_template_fields = cls._process_template_fields_in_name(name)
+        return cls.__new_inner__(name_without_template_fields, name, description, quantity.unit,  # type: ignore
+                                 dict(quantity=quantity), **assumptions)
 
     @property
     def value(self) -> float:
@@ -667,7 +709,10 @@ class ConstSymbol(BaseSymbol):
         return self.quantity
 
     def rename(self, name: str):
-        self.name = name
+        self.name = self._process_template_fields_in_name(name)
+        self.name_template = name
+        self._register_config_template_fields(name)
+
 
 
 
