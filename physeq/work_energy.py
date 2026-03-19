@@ -13,9 +13,9 @@ from __future__ import annotations
 from .cas.wrapped import Eq, Rational
 from .symbols.constants import G, g
 from .symbols.mass import m, M
-from .symbols.force import k_spr, Δx_spr, Δx_spr_max, μ_k
-from .symbols.kinematics import v, v_0, v_max
-from .symbols.space import r, y, d_max
+from .symbols.force import k_spr, Δx_spr
+from .symbols.kinematics import v, v_0
+from .symbols.space import r, y
 from .symbols.work_energy import KE, KE_0, ΔKE, PE, PE_0, ΔPE, PE_G, PE_spr, ΣW, W_nc
 
 
