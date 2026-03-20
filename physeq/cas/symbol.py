@@ -91,7 +91,7 @@ def translate_numerical_xreplace_rule(
     strict_quantities: bool = True,
     evalf_number_symbol: bool = False,
     unevaluated: bool = False,
-) -> dict[sympy.Symbol, sympy.Number | int | float]:
+) -> dict[sympy.Symbol, sympy.Number | int | float | exprorder.OrderUnevaluatedExpr]:
     '''
     Translate an `.xreplace()` rule with purely numerical values including
     PhysEq `ConstSymbol`, `exprorder.WrappedExpr`, or
@@ -107,12 +107,12 @@ def translate_numerical_xreplace_rule(
     `astropy.units.Quantity`, require the symbol to be a PhysEq `Symbol`
     with compatible units.
     '''
-    rule: dict[sympy.Symbol, sympy.Number | int | float] = {}
+    rule: dict[sympy.Symbol, sympy.Number | int | float | exprorder.OrderUnevaluatedExpr] = {}
     for k, v in raw_rule.items():
         if isinstance(k, exprorder.WrappedExpr):
             k = k.expr
         if strict_symbols:
-            if not isinstance(k, Symbol):
+            if not isinstance(k, Symbol) and not isinstance(k, ConstSymbol):
                 raise TypeError(
                     'Keys must be instances of physeq.Symbol; '
                     'sympy.Symbol is not accepted when "strict_symbols = True" (default)'
@@ -137,7 +137,7 @@ def translate_numerical_xreplace_rule(
             if k is v:
                 v = v.value
             elif isinstance(k, Symbol):
-                v = k.quantity_value_in_si_coherent_unit(v.quantity)
+                v = k.quantity_value_in_si_coherent_unit(v.to_quantity())
             elif not strict_quantities:
                 v = v.value
             else:
@@ -159,7 +159,7 @@ def translate_numerical_xreplace_rule(
         if unevaluated:
             rule[k] = exprorder.OrderUnevaluatedExpr(sympy.sympify(v))
         else:
-            rule[k] = v
+            rule[k] = v  # type: ignore
     return rule
 
 
@@ -410,10 +410,14 @@ class Symbol(BaseSymbol):
             super()._register_config_template_fields(name_with_template_fields)
 
 
+    @property
+    def is_subscriptable(self) -> bool:
+        return self._subscript_template_field in self.name_template
+
     def subscript(self, subscript: str | int, description: str | None = None,
                   description_prefix: str | int | None = None, description_suffix: str | int | None = None,
                   subscriptable: bool = True, style: Literal['normal', 'italic', 'bold'] | None = None) -> Self:
-        if self.name_template is None or self._subscript_template_field not in self.name_template:
+        if not self.is_subscriptable:
             raise TypeError(
                 'Subscripting is only supported for Symbols that are defined with names including '
                 f'a template field "{self._subscript_template_field}"'
@@ -653,6 +657,8 @@ class Symbol(BaseSymbol):
         value = float(value)
         return Quantity(value, self.si_coherent_unit)
 
+    quantity = quantity_from_value_in_si_coherent_unit
+
     def compatible_values_from_set(self, solnset: sympy.Set) -> sympy.FiniteSet:
         '''
         Filter a set to include only values that are compatible with SymPy
@@ -681,7 +687,7 @@ class Symbol(BaseSymbol):
 
 
 class ConstSymbol(BaseSymbol):
-    __slots__ = ('quantity',)
+    __slots__ = ('_quantity',)
 
     is_phys_const = True
 
@@ -692,21 +698,21 @@ class ConstSymbol(BaseSymbol):
             raise TypeError
         name_without_template_fields = cls._process_template_fields_in_name(name)
         return cls.__new_inner__(name_without_template_fields, name, description, quantity.unit,  # type: ignore
-                                 dict(quantity=quantity), **assumptions)
+                                 dict(_quantity=quantity), **assumptions)
 
     @property
     def value(self) -> float:
-        return float(self.quantity.value)
+        return float(self._quantity.value)
 
     @property
     def unit(self) -> UnitBase:
-        return self.quantity.unit
+        return self._quantity.unit
 
     def to_expr(self) -> sympy.UnevaluatedExpr:
         return sympy.UnevaluatedExpr(self.value)
 
-    def as_quantity(self) -> Quantity:
-        return self.quantity
+    def to_quantity(self) -> Quantity:
+        return self._quantity
 
     def rename(self, name: str):
         self.name = self._process_template_fields_in_name(name)
@@ -805,6 +811,8 @@ class WrappedSymbol(WrappedExpr):
     def quantity_from_value_in_si_coherent_unit(self, *args, **kwargs) -> Quantity:
         args = self._unwrap_args(args)
         return self.expr.quantity_from_value_in_si_coherent_unit(*args, **kwargs)
+
+    quantity = quantity_from_value_in_si_coherent_unit
 
     def compatible_values_from_set(self, *args, **kwargs) -> sympy.FiniteSet:
         args = self._unwrap_args(args)

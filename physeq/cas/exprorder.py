@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import sympy
-from sympy.core.sympify import _sympify, SympifyError
+from sympy.core.sympify import _sympify, SympifyError  # type: ignore
 from sympy.core.singleton import S
 from typing import Any, Callable, Self
 
@@ -619,7 +619,9 @@ class ExprOrderCollection(object):
     `flatten` operations and the creation of many sets of expressions.  There
     is extensive caching to optimize this.
     '''
-    def __init__(self, parents: Self | tuple[Self, ...] | list[Self] | None = None):
+
+    def __init__(self, parents: Self | tuple[Self, ...] | list[Self] | None = None,
+                 xreplace_rule: dict[sympy.Expr, sympy.Expr] | None = None):
         self.Add_orders: dict[sympy.Expr, AddExprOrder] = {}
         self.Mul_orders: dict[sympy.Expr, MulExprOrder] = {}
         if isinstance(parents, ExprOrderCollection):
@@ -646,6 +648,86 @@ class ExprOrderCollection(object):
         self._normalize_flatten_frozenset_cache: dict[frozenset[sympy.Expr], frozenset[sympy.Expr]] = {}
         self._term_to_frozenset_cache: dict[tuple, frozenset[sympy.Expr]] = {}
         self._terms_to_shared_subexprs_frozenset_cache: dict[tuple[sympy.Expr, ...], frozenset[sympy.Expr]] = {}
+
+        if xreplace_rule is None:
+            return
+        new_Add_orders: list[tuple[sympy.Add, tuple[sympy.Expr, ...]]] = []
+        new_Mul_orders: list[tuple[sympy.Mul, tuple[sympy.Expr, ...]]] = []
+        # In most cases, this doesn't attempt to deal with simplification that
+        # results from replacement.  Typically flattening will give good
+        # orders for those cases.
+        if all(k.is_Symbol for k in xreplace_rule):
+            for a_o in self.Add_orders.values():
+                if not any(k in a_o.expr.free_symbols for k in xreplace_rule):
+                    continue
+                new_expr = a_o.expr.xreplace(xreplace_rule)
+                if not new_expr.is_Add:
+                    continue
+                sorted_sympy_args_list = []
+                for arg in a_o.sorted_sympy_args:
+                    if any(k in arg.free_symbols for k in xreplace_rule):
+                        arg_xreplace = arg.xreplace(xreplace_rule)
+                        if arg_xreplace.is_Add:
+                            sorted_sympy_args_list.extend(
+                                self.sort_terms(arg_xreplace.args, arg_xreplace)  # type: ignore
+                            )
+                        else:
+                            sorted_sympy_args_list.append(arg_xreplace)
+                    else:
+                        sorted_sympy_args_list.append(arg)
+                new_Add_orders.append((new_expr, tuple(sorted_sympy_args_list)))
+            for m_o in self.Mul_orders.values():
+                if not any(k in m_o.expr.free_symbols for k in xreplace_rule):
+                    continue
+                new_expr = m_o.expr.xreplace(xreplace_rule)
+                if not new_expr.is_Mul:
+                    continue
+                sorted_sympy_args_list = []
+                for arg in m_o.sorted_sympy_args:
+                    if any(k in arg.free_symbols for k in xreplace_rule):
+                        arg_xreplace = arg.xreplace(xreplace_rule)
+                        if arg_xreplace.is_Mul:
+                            sorted_sympy_args_list.extend(
+                                self.sort_factors(arg_xreplace.args, arg_xreplace)  # type: ignore
+                            )
+                        else:
+                            sorted_sympy_args_list.append(arg)
+                    else:
+                        sorted_sympy_args_list.append(arg)
+                new_Mul_orders.append((new_expr, tuple(sorted_sympy_args_list)))
+        else:
+            for a_o in self.Add_orders.values():
+                new_expr = a_o.expr.xreplace(xreplace_rule)
+                if not new_expr.is_Add or new_expr == a_o.expr:
+                    continue
+                sorted_sympy_args_list = []
+                for arg in a_o.sorted_sympy_args:
+                    arg_xreplace = arg.xreplace(xreplace_rule)
+                    if arg_xreplace.is_Add:
+                        sorted_sympy_args_list.extend(
+                            self.sort_terms(arg_xreplace.args, arg_xreplace)  # type: ignore
+                        )
+                    else:
+                        sorted_sympy_args_list.append(arg)
+                new_Add_orders.append((new_expr, tuple(sorted_sympy_args_list)))
+            for m_o in self.Mul_orders.values():
+                new_expr = m_o.expr.xreplace(xreplace_rule)
+                if not new_expr.is_Mul or new_expr == m_o.expr:
+                    continue
+                sorted_sympy_args_list = []
+                for arg in m_o.sorted_sympy_args:
+                    arg_xreplace = arg.xreplace(xreplace_rule)
+                    if arg_xreplace.is_Mul:
+                        sorted_sympy_args_list.extend(
+                            self.sort_factors(arg_xreplace.args, arg_xreplace)  # type: ignore
+                        )
+                    else:
+                        sorted_sympy_args_list.append(arg)
+                new_Mul_orders.append((new_expr, tuple(sorted_sympy_args_list)))
+        for new_a_o in new_Add_orders:
+            self.append_Add_order(*new_a_o)
+        for new_m_o in new_Mul_orders:
+            self.append_Mul_order(*new_m_o)
 
 
     def normalize_flatten_expr(self, expr: sympy.Expr) -> tuple[sympy.Expr, ...]:
@@ -957,7 +1039,7 @@ class ExprOrderCollection(object):
 
             if not flatten:
                 for factor_orders, normalize in ((self.Mul_orders.values(), False),
-                                               ((f.normalize() for f in self.Mul_orders.values()), True)):
+                                                 ((f.normalize() for f in self.Mul_orders.values()), True)):
                     for factor_order in factor_orders:
                         indices_data = factor_order.factors_to_indices(remaining_factors, self)
                         indices, count_found, count_found_not_Numberlike, count_repeated = indices_data
@@ -1038,11 +1120,13 @@ class BaseWrapped(object):
             raise NotImplementedError
         return super().__new__(cls)
 
-    def _init_expr_order_collection(self, parents: BaseWrapped | list[BaseWrapped] | tuple[BaseWrapped, ...] | None):
+    def _init_expr_order_collection(self, parents: BaseWrapped | list[BaseWrapped] | tuple[BaseWrapped, ...] | None,
+                                    xreplace_rule: dict[sympy.Expr, sympy.Expr] | None = None):
         if isinstance(parents, BaseWrapped):
-            self.expr_order_collection = ExprOrderCollection(parents.expr_order_collection)
+            self.expr_order_collection = ExprOrderCollection(parents.expr_order_collection, xreplace_rule)
         elif isinstance(parents, (list, tuple)) and all(isinstance(x, BaseWrapped) for x in parents):
-            self.expr_order_collection = ExprOrderCollection(tuple(p.expr_order_collection for p in parents))
+            self.expr_order_collection = ExprOrderCollection(tuple(p.expr_order_collection for p in parents),
+                                                             xreplace_rule)
         elif parents is None:
             self.expr_order_collection = ExprOrderCollection()
         else:
@@ -1055,11 +1139,12 @@ class WrappedExpr(BaseWrapped):
     wrapped: sympy.Expr
 
     def __init__(self, expr: sympy.Expr, *,
-                 parents: BaseWrapped | list[BaseWrapped] | tuple[BaseWrapped, ...] | None = None):
+                 parents: BaseWrapped | list[BaseWrapped] | tuple[BaseWrapped, ...] | None = None,
+                 xreplace_rule: dict[sympy.Expr, sympy.Expr] | None = None):
         if not isinstance(expr, sympy.Expr):
             raise TypeError
         self.wrapped = expr
-        self._init_expr_order_collection(parents)
+        self._init_expr_order_collection(parents, xreplace_rule)
 
     @staticmethod
     def wrapper_class(*args, **kwargs) -> WrappedExpr:
@@ -1549,11 +1634,12 @@ class WrappedEq(BaseWrapped):
     __slots__ = ('wrapped_lhs', 'wrapped_rhs')
 
     def __init__(self, eq: sympy.Eq, *,
-                 parents: BaseWrapped | tuple[BaseWrapped, ...] | list[BaseWrapped] | None = None):
+                 parents: BaseWrapped | tuple[BaseWrapped, ...] | list[BaseWrapped] | None = None,
+                 xreplace_rule: dict[sympy.Expr, sympy.Expr] | None = None):
         if not isinstance(eq, sympy.Eq):
             raise TypeError
         self.wrapped = eq
-        self._init_expr_order_collection(parents)
+        self._init_expr_order_collection(parents, xreplace_rule)
         self.wrapped_lhs = None
         self.wrapped_rhs = None
 
@@ -1606,13 +1692,13 @@ class WrappedEq(BaseWrapped):
     def lhs(self) -> WrappedExpr:
         if self.wrapped_lhs is not None:
             return self.wrapped_lhs
-        return WrappedExpr(self.wrapped.lhs, parents=self)
+        return WrappedExpr(self.wrapped.lhs, parents=self)  # type: ignore
 
     @property
     def rhs(self) -> WrappedExpr:
         if self.wrapped_rhs is not None:
             return self.wrapped_rhs
-        return WrappedExpr(self.wrapped.rhs, parents=self)
+        return WrappedExpr(self.wrapped.rhs, parents=self)  # type: ignore
 
 
     _wrap_eq_class_cache: dict[type[sympy.Eq], Callable[..., Self]] = {}
@@ -1665,20 +1751,25 @@ class WrappedEq(BaseWrapped):
         return self.wrapped.free_symbols  # type: ignore
 
 
-    def xreplace(self, raw_rule: dict) -> Self:
+    def xreplace(self, raw_rule: dict[sympy.Expr | WrappedExpr, sympy.Expr | WrappedExpr]) -> Self:
         # Might consider also processing key and values with
         # `OrderUnevaluatedExpr.unwrap_expr()`
         rule = {}
+        parents: list[BaseWrapped] = [self]
         for k, v in raw_rule.items():
             if isinstance(k, WrappedExpr):
                 k = k.expr
             if isinstance(v, WrappedExpr):
+                parents.append(v)
                 v = v.expr
             rule[k] = v
+        new_eq = self.wrapped.xreplace(rule)
+        new_wrapped_eq = type(self)(new_eq, parents=parents, xreplace_rule=rule)
         if self.wrapped_lhs and self.wrapped_rhs:
-            new_eq = self.wrapped.xreplace(rule)
-            new_wrapped_eq = type(self)(new_eq, parents=self)
-            new_wrapped_eq.wrapped_lhs = self.wrapped_lhs.wrapper_class(new_eq.lhs, parents=self.wrapped_lhs)
-            new_wrapped_eq.wrapped_rhs = self.wrapped_rhs.wrapper_class(new_eq.rhs, parents=self.wrapped_rhs)
-            return new_wrapped_eq
-        return type(self)(self.wrapped.xreplace(rule), parents=self)
+            new_wrapped_eq.wrapped_lhs = self.wrapped_lhs.wrapper_class(new_eq.lhs,
+                                                                        parents=[self.wrapped_lhs] + parents[1:],
+                                                                        xreplace_rule=rule)
+            new_wrapped_eq.wrapped_rhs = self.wrapped_rhs.wrapper_class(new_eq.rhs,
+                                                                        parents=[self.wrapped_rhs] + parents[1:],
+                                                                        xreplace_rule=rule)
+        return new_wrapped_eq

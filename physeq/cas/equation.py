@@ -91,7 +91,14 @@ def solveset_for_ans(
         symbol = symbol.expr
     elif not isinstance(symbol, sympy.Symbol):
         raise TypeError
-    if not isinstance(ans, (sympy.Number, sympy.NumberSymbol, int, float)):
+    if isinstance(ans, Quantity):
+        if isinstance(symbol, Symbol):
+            ans = symbol.quantity_value_in_si_coherent_unit(ans)
+        else:
+            raise TypeError(
+                f'"ans" can only be a Quantity when "{symbol}" is a physeq.Symbol with associated units'
+            )
+    elif not isinstance(ans, (sympy.Number, sympy.NumberSymbol, int, float)):
         raise TypeError
     if not isinstance(xreplace, dict):
         raise TypeError
@@ -124,6 +131,7 @@ class Eq(sympy.Eq):  # `sympy.Eq` is alias for `sympy.Equality`
 
     By default, `evaluate=False`.
     '''
+
     def __new__(cls, lhs, rhs, **options):
         options.setdefault('evaluate', False)
         if isinstance(lhs, exprorder.WrappedExpr):
@@ -150,16 +158,26 @@ class Eq(sympy.Eq):  # `sympy.Eq` is alias for `sympy.Equality`
         '''
         return super().xreplace(translate_numerical_xreplace_rule(raw_rule, **kwargs))
 
+    def subscript_with_xreplace_rule(
+        self, subscript: str | int, style: Literal['normal', 'italic', 'bold'] | None = None
+    ) -> tuple[Self, dict[Symbol, Symbol]]:
+        '''
+        Create a new `Eq` with subscripting for all PhysEq `Symbol` that
+        support it, and also return the `xreplace()` rule for performing the
+        subscripting replacements.
+        '''
+        rule = {}
+        for s in self.free_symbols:
+            if isinstance(s, Symbol) and s.is_subscriptable:
+                rule[s] = s.subscript(subscript, style)
+        return (self.xreplace(rule), rule)
+
     def subscript(self, subscript: str | int, style: Literal['normal', 'italic', 'bold'] | None = None) -> Self:
         '''
         Create a new `Eq` with subscripting for all PhysEq `Symbol` that
         support it.
         '''
-        rule = {}
-        for s in self.free_symbols:
-            if isinstance(s, Symbol) and s.subscript_template:
-                rule[s] = s.subscript(subscript, style)
-        return self.xreplace(rule)
+        return self.subscript_with_xreplace_rule(subscript, style)[0]
 
     @property
     def nonconst_free_symbols(self) -> set[sympy.Symbol]:
@@ -180,14 +198,27 @@ class WrappedEq(exprorder.WrappedEq):
         if not isinstance(self.wrapped, Eq):
             raise TypeError
 
-    def xreplace(self, rule: dict) -> Self:
-        return type(self)(self.wrapped.xreplace(rule))
-
-    def num_xreplace(self, rule: dict) -> Self:
-        return type(self)(self.wrapped.num_xreplace(rule))
+    def num_xreplace(self, *args, **kwargs) -> Self:
+        # This doesn't pass the xreplace rule to the new wrapped equation to
+        # generate new term orders.  Order can typically be maintained
+        # sufficiently by setting `unevaluated=True`, or by printing with an
+        # xreplace rule.
+        new_eq = self.wrapped.num_xreplace(*args, **kwargs)
+        new_wrapped_eq = type(self)(new_eq, parents=self)
+        if self.wrapped_lhs and self.wrapped_rhs:
+            new_wrapped_eq.wrapped_lhs = self.wrapped_lhs.wrapper_class(new_eq.lhs, parents=self.wrapped_lhs)
+            new_wrapped_eq.wrapped_rhs = self.wrapped_rhs.wrapper_class(new_eq.rhs, parents=self.wrapped_rhs)
+        return new_wrapped_eq
 
     def subscript(self, *args, **kwargs) -> Self:
-        return type(self)(self.wrapped.subscript(*args, **kwargs))
+        new_eq, rule = self.wrapped.subscript_with_xreplace_rule(*args, **kwargs)
+        new_wrapped_eq = type(self)(new_eq, parents=self, xreplace_rule=rule)
+        if self.wrapped_lhs and self.wrapped_rhs:
+            new_wrapped_eq.wrapped_lhs = self.wrapped_lhs.wrapper_class(new_eq.lhs, parents=self.wrapped_lhs,
+                                                                        xreplace_rule=rule)
+            new_wrapped_eq.wrapped_rhs = self.wrapped_rhs.wrapper_class(new_eq.rhs, parents=self.wrapped_rhs,
+                                                                        xreplace_rule=rule)
+        return new_wrapped_eq
 
     @property
     def nonconst_free_symbols(self) -> set[sympy.Symbol]:
