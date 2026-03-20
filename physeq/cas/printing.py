@@ -135,7 +135,10 @@ class LatexPrinter(SymPyLatexPrinter):
 
     def _print_Float(self, expr: Float) -> str:
         if not self._settings['float_fmtspec']:
-            return super()._print_Float(expr)
+            str_real = super()._print_Float(expr)
+            if str_real == '0.0':
+                str_real = '0'
+            return str_real
         str_real = f'{expr:{self._settings['float_fmtspec']}}'
         #### Begin code from `sympy/printing/latex.py`, from `_print_Float()`
         #### https://github.com/sympy/sympy/blob/37615e9bcac2e0938c6957ec3484a182d223e086/sympy/printing/latex.py
@@ -159,6 +162,10 @@ class LatexPrinter(SymPyLatexPrinter):
         else:
             if self._settings['decimal_separator'] == 'comma':
                 str_real = str_real.replace('.','{,}')
+            #### Begin modification
+            if str_real == '0.0':
+                str_real = '0'
+            #### End modification
             return str_real
         #### End code from `sympy/printing/latex.py`, from `_print_Float()`
 
@@ -391,5 +398,7 @@ class LatexPrinter(SymPyLatexPrinter):
 
 
 def latex(expr: Basic | exprorder.BaseWrapped | Quantity | Unit, **settings) -> str:
-    #settings.setdefault('mul_symbol_latex_numbers', r'\times')
+    settings.setdefault('float_fmtspec', '.3g')
+    settings.setdefault('mul_symbol_latex_numbers', r'\times')
+    settings.setdefault('separate_numerical_frac', True)
     return LatexPrinter(settings).doprint(expr)
