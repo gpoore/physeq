@@ -14,7 +14,6 @@ import sympy
 from astropy.units import Quantity
 from . import equation, exprorder, symbol
 from .symbol import WrappedExpr
-from .equation import WrappedEq
 
 
 # Numerical constants
@@ -40,11 +39,8 @@ tan = WrappedExpr.wrap_compound_expr_class(sympy.tan)
 atan = WrappedExpr.wrap_compound_expr_class(sympy.atan)
 atan2 = WrappedExpr.wrap_compound_expr_class(sympy.atan2)
 
-# Equality
-Eq = WrappedEq.wrap_eq_class(sympy.Eq)
 
-
-# Overrides for PhysEq
+# PhysEq
 Symbol = symbol.WrappedSymbol.wrap_symbol_class(symbol.Symbol)
 ConstSymbol = symbol.WrappedConstSymbol.wrap_const_symbol_class(symbol.ConstSymbol)
 Eq = equation.WrappedEq.wrap_eq_class(equation.Eq)
