@@ -5,13 +5,13 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 name = 'physeq'
-description = 'Library of symbolic physics equations for generating problems with solutions'
+description = 'Library for generating physics problems with realistic values and step-by-step solutions'
 readme = 'README.md'
 requires-python = '>= 3.10'
 authors = [
     {name = 'Geoffrey M. Poore', email = 'gpoore@gmail.com'}
 ]
-license = {text = 'BSD-3-Clause'}
+license-files = ['LICENSE*']
 dynamic = ['version']
 keywords = ['physics', 'education', 'SymPy']
 dependencies = [
@@ -24,7 +24,6 @@ classifiers = [
     'Intended Audience :: Developers',
     'Intended Audience :: Education',
     'Intended Audience :: Science/Research',
-    'License :: OSI Approved :: BSD License',
     'Operating System :: OS Independent',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
@@ -42,9 +41,6 @@ homepage = 'https://github.com/gpoore/physeq'
 repository = 'https://github.com/gpoore/physeq'
 changelog = 'https://github.com/gpoore/physeq/blob/main/CHANGELOG.md'
 
-
-[tool.setuptools]
-license-files = ['LICENSE*', 'CHANGELOG*']
 
 [tool.setuptools.dynamic]
 version = {attr = 'physeq.__version__'}
