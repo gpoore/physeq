@@ -1,6 +1,6 @@
 BSD 3-Clause License
 
-Copyright (c) 2025, Geoffrey M. Poore
+Copyright (c) 2025-2026, Geoffrey M. Poore
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -32,8 +32,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ------------------------------------------------------------------------------
 
 
-Some methods of the `TermOrderMixin` and `LatexPrinter` classes are adapted
-from SymPy (https://github.com/sympy/sympy).  SymPy license:
+Some methods of the `LatexPrinter` class are adapted from SymPy
+(https://github.com/sympy/sympy).  See the implementation for details and
+references to the SymPy source.  SymPy license:
 
 
 Copyright (c) 2006-2023 SymPy Development Team
