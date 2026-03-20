@@ -86,3 +86,26 @@ def solveset_for_ans(
         *(WrappedExpr(x, parents=parents) for x in solution_set),  # type: ignore
         evaluate=False,
     )
+
+
+def simplify(wrapped_expr: exprorder.BaseWrapped) -> exprorder.BaseWrapped:
+    '''
+    `sympy.simplify()` wrapper that simplifies wrapped expressions or
+    equations and returns wrapped objects that preserve expression order.
+    '''
+    if isinstance(wrapped_expr, exprorder.WrappedExpr):
+        return wrapped_expr.wrapper_class(sympy.simplify(wrapped_expr.wrapped), parents=wrapped_expr)
+    if isinstance(wrapped_expr, exprorder.WrappedEq):
+        simplified_expr = sympy.simplify(wrapped_expr.wrapped)
+        wrapped_simplified_expr = type(wrapped_expr)(simplified_expr, parents=wrapped_expr)
+        if wrapped_expr.wrapped_lhs and wrapped_expr.wrapped_rhs:
+            wrapped_simplified_expr.wrapped_lhs = wrapped_expr.wrapped_lhs.wrapper_class(
+                simplified_expr.lhs, parents=wrapped_expr.wrapped_lhs
+            )
+            wrapped_simplified_expr.wrapped_rhs = wrapped_expr.wrapped_rhs.wrapper_class(
+                simplified_expr.rhs, parents=wrapped_expr.wrapped_rhs
+            )
+        return wrapped_simplified_expr
+    if isinstance(wrapped_expr, exprorder.BaseWrapped):
+        raise NotImplementedError
+    raise TypeError
