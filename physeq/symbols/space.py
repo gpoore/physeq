@@ -15,7 +15,7 @@ from ..cas.wrapped import Symbol
 
 
 # distance
-d = Symbol(r'd_{<sub>}', 'distance', meter)
+d = Symbol(r'd_{<sub>}', 'distance', meter, nonnegative=True)
 d_min = d.subscript(r'min', description_prefix='min', style='normal')
 d_max = d.subscript(r'max', description_prefix='max', style='normal')
 

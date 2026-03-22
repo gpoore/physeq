@@ -22,7 +22,7 @@ W_k = W.subscript(r'k', description_suffix='by kinetic friction')
 
 
 # Kinetic energy
-KE = E_k = Symbol(r'<config.kinetic_energy>_{<sub>}', 'kinetic energy', joule)
+KE = E_k = Symbol(r'<config.kinetic_energy>_{<sub>}', 'kinetic energy', joule, nonnegative=True)
 KE_0 = E_k_0 = KE.subscript(0, description_prefix='initial')
 ΔKE = ΔE_k = delta_KE = delta_E_k = Symbol(r'\Delta <config.kinetic_energy>_{<sub>}',
                                            'change in kinetic energy', joule)

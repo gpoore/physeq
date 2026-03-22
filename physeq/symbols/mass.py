@@ -14,11 +14,10 @@ from astropy.units import kilogram
 from ..cas.wrapped import Symbol
 
 
-m = Symbol(r'm_{<sub>}', 'mass', kilogram)
+m = Symbol(r'm_{<sub>}', 'mass', kilogram, nonnegative=True)
 m_1 = m.subscript(1)
 m_2 = m.subscript(2)
 
-M = Symbol(r'M_{<sub>}', 'Mass', kilogram)
+M = Symbol(r'M_{<sub>}', 'Mass', kilogram, nonnegative=True)
 
 m_sys = m.subscript('sys', description_prefix='system', style='normal')
-
