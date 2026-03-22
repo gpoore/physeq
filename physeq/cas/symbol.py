@@ -645,16 +645,53 @@ class Symbol(BaseSymbol):
             symbol._rename(func(name, *other_args))
 
 
+    def _is_value_compatible(self, value: int | float | Quantity | sympy.Expr) -> bool:
+        if isinstance(value, sympy.Expr):
+            if value.is_number:
+                value = float(value.n())
+            else:
+                return sympy_check_assumptions(value, self) is not False
+        elif isinstance(value, Quantity):
+            try:
+                value.to(self.si_coherent_unit)
+            except Exception:
+                return False
+            value = float(value.value)
+        if sympy_check_assumptions(value, self) is False:
+            return False
+        if self.value_constraints is not None and not self.value_constraints(value):
+            return False
+        return True
+
+    def _check_value(self, value: int | float | Quantity | sympy.Expr):
+        if isinstance(value, sympy.Expr):
+            if value.is_number:
+                value = float(value.n())
+            else:
+                if sympy_check_assumptions(value, self) is False:
+                    raise ValueError(f'Symbol "{self}" cannot have value "{value}"; this violates symbol assumptions')
+                return
+        elif isinstance(value, Quantity):
+            value.to(self.si_coherent_unit)
+            value = float(value.value)
+        if sympy_check_assumptions(value, self) is False:
+            raise ValueError(f'Symbol "{self}" cannot have value "{value}"; this violates symbol assumptions')
+        if self.value_constraints is not None and not self.value_constraints(value):
+            raise ValueError(f'Symbol "{self}" cannot have value "{value}"; this violates symbol value constraints')
+
         # https://en.wikipedia.org/wiki/Coherence_(units_of_measurement)
     def quantity_value_in_si_coherent_unit(self, quantity: str | Quantity) -> float:
         if isinstance(quantity, str):
             quantity = Quantity(quantity)
         elif not isinstance(quantity, Quantity):
             raise TypeError
-        return float(quantity.to(self.si_coherent_unit).value)
+        value = float(quantity.to(self.si_coherent_unit).value)
+        self._check_value(value)
+        return value
 
     def quantity_from_value_in_si_coherent_unit(self, value: float) -> Quantity:
         value = float(value)
+        self._check_value(value)
         return Quantity(value, self.si_coherent_unit)
 
     quantity = quantity_from_value_in_si_coherent_unit
@@ -662,26 +699,33 @@ class Symbol(BaseSymbol):
     def compatible_values_from_set(self, solnset: sympy.Set) -> sympy.FiniteSet:
         '''
         Filter a set to include only values that are compatible with SymPy
-        assumptions.
+        assumptions plus value constraints.
         '''
         if not isinstance(solnset, sympy.Set):
             raise TypeError
         if not isinstance(solnset, sympy.FiniteSet):
             raise NotImplementedError
-        return sympy.FiniteSet(*(x for x in solnset if sympy_check_assumptions(x, self) is not False), evaluate=False)
-
+        return sympy.FiniteSet(*(x for x in solnset if self._is_value_compatible(x)), evaluate=False)  # type: ignore
 
     def randrange_quantity(self, *args, **kwargs) -> Quantity:
-        return Quantity(random.randrange(*args, **kwargs), self.si_coherent_unit)
+        value = random.randrange(*args, **kwargs)
+        self._check_value(value)
+        return Quantity(value, self.si_coherent_unit)
 
     def randint_quantity(self, *args) -> Quantity:
-        return Quantity(random.randint(*args), self.si_coherent_unit)
+        value = random.randint(*args)
+        self._check_value(value)
+        return Quantity(value, self.si_coherent_unit)
 
     def choice_quantity(self, seq) -> Quantity:
-        return Quantity(random.choice(seq), self.si_coherent_unit)
+        value = random.choice(seq)
+        self._check_value(value)
+        return Quantity(value, self.si_coherent_unit)
 
     def uniform_quantity(self, *args) -> Quantity:
-        return Quantity(random.uniform(*args), self.si_coherent_unit)
+        value = random.uniform(*args)
+        self._check_value(value)
+        return Quantity(value, self.si_coherent_unit)
 
 
 
@@ -804,6 +848,14 @@ class WrappedSymbol(WrappedExpr):
     def rename(self, *args, **kwargs):
         self.expr.rename(*args, **kwargs)
 
+    @property
+    def name_template(self) -> str:
+        return self.expr.name_template
+
+    @property
+    def si_coherent_unit(self) -> UnitBase:
+        return self.expr.si_coherent_unit
+
     def quantity_value_in_si_coherent_unit(self, *args, **kwargs) -> float:
         args = self._unwrap_args(args)
         return self.expr.quantity_value_in_si_coherent_unit(*args, **kwargs)
@@ -863,3 +915,11 @@ class WrappedConstSymbol(WrappedExpr):
 
     def rename(self, *args, **kwargs):
         self.expr.rename(*args, **kwargs)
+
+    @property
+    def name_template(self) -> str:
+        return self.expr.name_template
+
+    @property
+    def si_coherent_unit(self) -> UnitBase:
+        return self.expr.si_coherent_unit
