@@ -78,6 +78,10 @@ def translate_xreplace_rule(
             if ((isinstance(v, (int, float)) and not k.value_constraints(v)) or
                     (isinstance(v, sympy.Expr) and v.is_number and not k.value_constraints(v.n()))):
                 raise TypeError(f'"value_constraints" for "{k}" are incompatible with replacement value "{v}"')
+        if isinstance(v, int):
+            v = sympy.Integer(v)
+        elif isinstance(v, float):
+            v = sympy.Float(v)
         rule[k] = v
     return rule
 
@@ -156,6 +160,10 @@ def translate_numerical_xreplace_rule(
             if ((isinstance(v, (int, float)) and not k.value_constraints(v)) or
                     (isinstance(v, sympy.Expr) and v.is_number and not k.value_constraints(v.n()))):
                 raise TypeError(f'"value_constraints" for "{k}" are incompatible with replacement value "{v}"')
+        if isinstance(v, int):
+            v = sympy.Integer(v)
+        elif isinstance(v, float):
+            v = sympy.Float(v)
         if unevaluated:
             rule[k] = exprorder.OrderUnevaluatedExpr(sympy.sympify(v))
         else:
@@ -772,19 +780,19 @@ class WrappedExpr(exprorder.WrappedExpr):
     def wrapper_class(*args, **kwargs) -> WrappedExpr:
         return WrappedExpr(*args, **kwargs)
 
-    def xreplace(self, raw_rule: dict, **kwargs) -> Self:
+    def xreplace(self, raw_rule: dict, **kwargs) -> WrappedExpr:
         '''
         `.xreplace()` compatible with `exprorder.WrappedExpr` and
         `astropy.units.Quantity`.
         '''
-        return type(self)(self.wrapped.xreplace(translate_xreplace_rule(raw_rule, **kwargs)), parents=self)
+        return self.wrapper_class(self.wrapped.xreplace(translate_xreplace_rule(raw_rule, **kwargs)), parents=self)
 
-    def num_xreplace(self, raw_rule: dict, **kwargs) -> Self:
+    def num_xreplace(self, raw_rule: dict, **kwargs) -> WrappedExpr:
         '''
         `.xreplace()` with purely numerical values compatible with PhysEq
         `ConstSymbol`, `exprorder.WrappedExpr`, or `astropy.units.Quantity`.
         '''
-        return type(self)(self.wrapped.xreplace(translate_numerical_xreplace_rule(raw_rule, **kwargs)), parents=self)
+        return self.wrapper_class(self.wrapped.xreplace(translate_numerical_xreplace_rule(raw_rule, **kwargs)), parents=self)
 
 
 
