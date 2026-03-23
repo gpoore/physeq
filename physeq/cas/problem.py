@@ -43,10 +43,10 @@ class Problem(object):
         self,
         setup: dict[ConstSymbol | Symbol | WrappedConstSymbol | WrappedSymbol,
                     int | float | Quantity | ConstSymbol | WrappedConstSymbol],
-        known_symbols: list[ConstSymbol | Symbol | WrappedConstSymbol | WrappedSymbol],
-        unknown_symbols: list[Symbol | WrappedSymbol],
+        knowns: list[ConstSymbol | Symbol | WrappedConstSymbol | WrappedSymbol],
+        unknowns: list[Symbol | WrappedSymbol],
         equations: list[WrappedEq],
-        supporting_equations: list[WrappedEq],
+        definitions: list[WrappedEq] | None = None,
         simplify: bool = False,
     ):
         self.setup: dict[ConstSymbol | Symbol, ConstSymbol | Quantity] = {}
@@ -68,45 +68,47 @@ class Problem(object):
                     raise TypeError
             self.setup[k] = v
 
-        self.known_symbols: set[ConstSymbol | Symbol] = set()
-        if not isinstance(known_symbols, list):
+        self._known_symbols_set: set[ConstSymbol | Symbol] = set()
+        if not isinstance(knowns, list):
             raise TypeError
-        for s in known_symbols:
+        for s in knowns:
             if isinstance(s, (WrappedConstSymbol, WrappedSymbol)):
                 s = s.expr
             elif not isinstance(s, (ConstSymbol, Symbol)):
                 raise TypeError
-            self.known_symbols.add(s)
+            self._known_symbols_set.add(s)
 
-        self.unknown_symbols: set[ConstSymbol | Symbol] = set()
-        if not isinstance(unknown_symbols, list):
+        self._unknown_symbols_set: set[ConstSymbol | Symbol] = set()
+        if not isinstance(unknowns, list):
             raise TypeError
-        for s in unknown_symbols:
+        for s in unknowns:
             if isinstance(s, (WrappedConstSymbol, WrappedSymbol)):
                 s = s.expr
             elif not isinstance(s, (ConstSymbol, Symbol)):
                 raise TypeError
-            self.unknown_symbols.add(s)
+            self._unknown_symbols_set.add(s)
 
-        self.equations: list[WrappedEq] = []
+        self._equations_list: list[WrappedEq] = []
         if not isinstance(equations, list):
             raise TypeError
         for eq in equations:
             if not isinstance(eq, WrappedEq):
                 raise TypeError
-            self.equations.append(eq)
+            self._equations_list.append(eq)
 
-        self.supporting_equations: list[WrappedEq] = []
-        if not isinstance(supporting_equations, list):
+        self._definitions_list: list[WrappedEq] = []
+        if definitions is None:
+            definitions = []
+        elif not isinstance(definitions, list):
             raise TypeError
-        for s_eq in supporting_equations:
-            if not isinstance(s_eq, WrappedEq):
+        for eq in definitions:
+            if not isinstance(eq, WrappedEq):
                 raise TypeError
-            if not isinstance(s_eq.wrapped.lhs, Symbol):
+            if not isinstance(eq.wrapped.lhs, Symbol):
                 raise TypeError(
-                    'Only supporting equations with a single symbol on the left-hand side are currently supported'
+                    'Only definition equations with a single symbol on the left-hand side are supported'
                 )
-            self.supporting_equations.append(s_eq)
+            self._definitions_list.append(eq)
 
         if not isinstance(simplify, bool):
             raise TypeError
@@ -117,14 +119,14 @@ class Problem(object):
         self._all_quantities_or_constants: dict[ConstSymbol | Symbol, ConstSymbol | Quantity] = self.setup.copy()
 
         self._solve_numerical()
-        self.known_quantities: dict[ConstSymbol | Symbol, Quantity] = {}
-        for k in self.known_symbols:
+        self.knowns: dict[ConstSymbol | Symbol, Quantity] = {}
+        self.unknowns: dict[ConstSymbol | Symbol, Quantity] = {}
+        self.equations: dict[WrappedEq, list[WrappedEq]] = {}
+        for k in self._known_symbols_set:
             v = self._all_quantities_or_constants[k]
             if isinstance(v, ConstSymbol):
                 v = v.to_quantity()
-            self.known_quantities[k] = v
-        self.equation_solutions: dict[WrappedEq, list[WrappedEq]] = {}
-        self.unknown_quantities: dict[ConstSymbol | Symbol, Quantity] = {}
+            self.knowns[k] = v
         self._generate_solutions()
 
 
@@ -134,9 +136,9 @@ class Problem(object):
         # enhanced to support systems of equations, assuming that there is a
         # straightforward way to implement step-by-step solutions for those
         # cases (or those cases don't need detailed solutions).
-        eqs = [eq.num_xreplace(self.setup) for eq in self.equations + self.supporting_equations]
+        eqs = [eq.num_xreplace(self.setup) for eq in self._equations_list + self._definitions_list]
         solved = {}
-        solved_symbols_set = set(self.known_symbols)
+        solved_symbols_set = set(self._known_symbols_set)
         while True:
             remaining_eqs = []
             for eq in eqs:
@@ -151,7 +153,7 @@ class Problem(object):
                     remaining_eqs.append(eq)
             if len(remaining_eqs) == 0:
                 break
-            if not (self.unknown_symbols - solved_symbols_set):
+            if not (self._unknown_symbols_set - solved_symbols_set):
                 break
             if len(remaining_eqs) == len(eqs):
                 raise RuntimeError(
@@ -165,16 +167,16 @@ class Problem(object):
 
     def _generate_solutions(self):
         solutions: dict[WrappedEq, list[WrappedEq]] = defaultdict(list)
-        for eq in self.equations:
+        for eq in self._equations_list:
             solutions[eq].append(eq)
 
-        for eq in self.equations:
+        for eq in self._equations_list:
             current_eq: WrappedEq = solutions[eq][-1]
-            for supporting_eq in self.supporting_equations:
+            for definition_eq in self._definitions_list:
                 # Do replacements for zero in separate pass first
-                if supporting_eq.wrapped.rhs == 0 and supporting_eq.wrapped.lhs in current_eq.free_symbols:
-                    replacement = supporting_eq.wrapped_rhs or supporting_eq.wrapped.rhs
-                    current_eq = current_eq.xreplace({supporting_eq.wrapped.lhs: replacement})  # type: ignore
+                if definition_eq.wrapped.rhs == 0 and definition_eq.wrapped.lhs in current_eq.free_symbols:
+                    replacement = definition_eq.wrapped_rhs or definition_eq.wrapped.rhs
+                    current_eq = current_eq.xreplace({definition_eq.wrapped.lhs: replacement})  # type: ignore
                     solutions[eq].append(current_eq)
                     current_eq_simplified = wrapped.simplify(current_eq)
                     if ((self.simplify and current_eq_simplified.wrapped != current_eq.wrapped) or
@@ -186,11 +188,11 @@ class Problem(object):
                 # there can be multiple independent substitutions but no
                 # nested substitutions
                 current_free_symbols = current_eq.free_symbols
-                for supporting_eq in self.supporting_equations:
-                    if (supporting_eq.wrapped.lhs in current_free_symbols and
-                            supporting_eq.wrapped.lhs in current_eq.free_symbols):
-                        replacement = supporting_eq.wrapped_rhs or supporting_eq.wrapped.rhs
-                        current_eq = current_eq.xreplace({supporting_eq.wrapped.lhs: replacement})  # type: ignore
+                for definition_eq in self._definitions_list:
+                    if (definition_eq.wrapped.lhs in current_free_symbols and
+                            definition_eq.wrapped.lhs in current_eq.free_symbols):
+                        replacement = definition_eq.wrapped_rhs or definition_eq.wrapped.rhs
+                        current_eq = current_eq.xreplace({definition_eq.wrapped.lhs: replacement})  # type: ignore
                 if current_eq is solutions[eq][-1]:
                     break
                 solutions[eq].append(current_eq)
@@ -200,9 +202,9 @@ class Problem(object):
                     solutions[eq].append(current_eq_simplified)  # type: ignore
                     current_eq = current_eq_simplified  # type: ignore
 
-        remaining_eqs = self.equations.copy()
-        solved_symbols_set = set(self.known_quantities)
-        remaining_unknown_symbols = self.unknown_symbols.copy()
+        remaining_eqs = self._equations_list.copy()
+        solved_symbols_set = self._known_symbols_set.copy()
+        remaining_unknown_symbols = self._unknown_symbols_set.copy()
         while True:
             if not remaining_unknown_symbols or not remaining_eqs:
                 break
@@ -228,11 +230,11 @@ class Problem(object):
                     except KeyError:
                         pass
                     remaining_eqs.remove(eq)
-                    self.equation_solutions[eq] = solutions[eq]
+                    self.equations[eq] = solutions[eq]
                     value = self._all_quantities_or_constants[symbol]
                     if isinstance(value, ConstSymbol):
                         value = value.to_quantity()
-                    self.unknown_quantities[symbol] = value
+                    self.unknowns[symbol] = value
                     break
             else:
                 raise RuntimeError(
@@ -246,16 +248,16 @@ class Problem(object):
 
         solutions.append('**Known**\n')
 
-        knowns = r'\quad '.join(f'{latex(k)} = {latex(v)}' for k, v in self.known_quantities.items())
+        knowns = r'\quad '.join(f'{latex(k)} = {latex(v)}' for k, v in self.knowns.items())
         solutions.append(f'*   ${knowns}$\n')
 
         solutions.append(f'**Unknown**\n')
-        unknowns = r'\quad '.join(latex(k) for k in self.unknown_quantities.keys())
+        unknowns = r'\quad '.join(latex(k) for k in self.unknowns.keys())
         solutions.append(f'*   ${unknowns}$\n')
 
         solutions.append('**Solutions**\n')
-        if len(self.equation_solutions) == 1:
-            eq_list = next(iter(self.equation_solutions.values()))
+        if len(self.equations) == 1:
+            eq_list = next(iter(self.equations.values()))
             solutions.append(f'*  $\\displaystyle {latex(eq_list[0])}$\n')
             for eq in eq_list[1:-1]:
                 solutions.append(f'    $\\displaystyle {latex(eq)}$\n')
@@ -264,7 +266,7 @@ class Problem(object):
                 solutions.append(f'    ${latex(eq_list[-2].lhs)} = {num_sub_rhs}$\n')
                 solutions.append(f'    $\\displaystyle {latex(eq_list[-1])}$\n')
         else:
-            for n, eq_list in enumerate(self.equation_solutions.values(), 1):
+            for n, eq_list in enumerate(self.equations.values(), 1):
                 solutions.append(f'{n:>2}. $\\displaystyle {latex(eq_list[0])}$\n')
                 for eq in eq_list[1:-1]:
                     solutions.append(f'    $\\displaystyle {latex(eq)}$\n')
