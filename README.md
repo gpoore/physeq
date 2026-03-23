@@ -42,13 +42,13 @@ Currently, there is not built-in support for calculus.
 Examples are under `examples/` in the project repository.  Here is example
 output for a friction problem:
 
-*A mass $m$ is initially traveling at speed $v_{0}$ across a
+A mass $m$ is initially traveling at speed $v_{0}$ across a
 flat surface with coefficient of kinetic friction $\mu_{k}$.  It comes to
-rest after traveling a distance $d$.*
+rest after traveling a distance $d$.
 
 **Known**
 
-*   $g = 9.80 \, \mathrm{\tfrac{m}{s^{2}}}\quad v = 0 \, \mathrm{\tfrac{m}{s}}\quad m = 22.0 \, \mathrm{kg}\quad \mu_{k} = 0.154\quad v_{0} = 8.10 \, \mathrm{\tfrac{m}{s}}$
+*   $g = 9.80 \\, \mathrm{\tfrac{m}{s^{2}}}\quad v = 0 \\, \mathrm{\tfrac{m}{s}}\quad m = 22.0 \\, \mathrm{kg}\quad \mu_{k} = 0.154\quad v_{0} = 8.10 \\, \mathrm{\tfrac{m}{s}}$
 
 **Unknown**
 
@@ -72,7 +72,7 @@ rest after traveling a distance $d$.*
 
     $d = \frac{- \left(0\right)^{2} + \left(8.10\right)^{2}}{2 \left(0.154\right) \left(9.80\right)}$
 
-    $\displaystyle d = 21.7 \, \mathrm{m}$
+    $\displaystyle d = 21.7 \\, \mathrm{m}$
 
 
 
