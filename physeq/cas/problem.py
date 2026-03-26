@@ -88,6 +88,8 @@ class Problem(object):
                 raise TypeError
             self._unknown_symbols_set.add(s)
 
+        self._all_symbols_set = self._known_symbols_set | self._unknown_symbols_set
+
         self._equations_list: list[WrappedEq] = []
         if not isinstance(equations, list):
             raise TypeError
@@ -138,7 +140,7 @@ class Problem(object):
         # cases (or those cases don't need detailed solutions).
         eqs = [eq.num_xreplace(self.setup) for eq in self._equations_list + self._definitions_list]
         solved = {}
-        solved_symbols_set = set(self._known_symbols_set)
+        solved_symbols_set = set(self.setup)
         while True:
             remaining_eqs = []
             for eq in eqs:
@@ -146,20 +148,29 @@ class Problem(object):
                     symbol: Symbol = next(iter(eq.free_symbols))  # type: ignore
                     solns = solveset_with_checked_assumptions(eq, symbol)
                     if len(solns) != 1:
-                        raise NotImplementedError
+                        raise RuntimeError(
+                            'Failed to find a single solution:\n'
+                            f'  {solns}\n'
+                            'May need more equations, '
+                            'or this problem may not be supported by the current solving algorithm'
+                        )
                     solved[symbol] = symbol.quantity(next(iter(solns)).n())  # type: ignore
                     solved_symbols_set.add(symbol)
                 else:
                     remaining_eqs.append(eq)
             if len(remaining_eqs) == 0:
                 break
-            if not (self._unknown_symbols_set - solved_symbols_set):
+            if not (self._all_symbols_set - solved_symbols_set):
                 break
             if len(remaining_eqs) == len(eqs):
-                raise RuntimeError(
-                    'Cannot solve; may need more equations, '
-                    'or this problem may not be supported by the current solving algorithm'
-                )
+                raise RuntimeError(''.join([
+                    'Cannot solve; may need more equations, ',
+                    'or this problem may not be supported by the current solving algorithm\n',
+                    f'Solved symbols: {solved_symbols_set}\n',
+                    f'Remaining symbols: {self._all_symbols_set - solved_symbols_set}\n',
+                    'Remaining equations:',
+                    *['\n  * ' + latex(eq) for eq in remaining_eqs],
+                ]))
             eqs = [eq.num_xreplace(solved) for eq in remaining_eqs]
         self._solved_from_setup.update(solved)
         self._all_quantities_or_constants.update(solved)
@@ -211,6 +222,12 @@ class Problem(object):
             for eq in remaining_eqs:
                 current_eq = solutions[eq][-1]
                 remaining_symbols_set = current_eq.free_symbols - solved_symbols_set
+                if len(remaining_symbols_set) == 0:
+                    # May have more equations than necessary.  Only show those
+                    # that are needed.
+                    del solutions[eq]
+                    remaining_eqs.remove(eq)
+                    break
                 if len(remaining_symbols_set) == 1:
                     symbol: Symbol = next(iter(remaining_symbols_set))  # type: ignore
                     solns = solveset_for_ans(current_eq, symbol, ans=self._all_quantities_or_constants[symbol].value,
@@ -218,7 +235,8 @@ class Problem(object):
                     if not len(solns) == 1:
                         raise NotImplementedError
                     soln_eq = Eq(symbol, next(iter(solns)), parents=current_eq)
-                    solutions[eq].append(soln_eq)
+                    if soln_eq.wrapped != current_eq.wrapped:
+                        solutions[eq].append(soln_eq)
                     simplified_soln_eq = wrapped.simplify(soln_eq)
                     if ((self.simplify and simplified_soln_eq.wrapped != soln_eq.wrapped) or
                             len(simplified_soln_eq.free_symbols) < len(soln_eq.free_symbols)):  # type: ignore
@@ -237,10 +255,12 @@ class Problem(object):
                     self.unknowns[symbol] = value
                     break
             else:
-                raise RuntimeError(
-                    'Cannot solve; may need more equations, '
-                    'or this problem may not be supported by the current solving algorithm'
-                )
+                raise RuntimeError(''.join([
+                    'Cannot solve; may need more equations, ',
+                    'or this problem may not be supported by the current solving algorithm.\n',
+                    'Remaining equations:',
+                    *['\n  * ' + latex(solutions[eq][-1]) for eq in remaining_eqs],
+                ]))
 
 
     def simple_solutions(self) -> str:
