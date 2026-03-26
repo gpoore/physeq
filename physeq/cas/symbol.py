@@ -49,9 +49,9 @@ def translate_xreplace_rule(
         if isinstance(k, exprorder.WrappedExpr):
             k = k.expr
         if strict_symbols:
-            if not isinstance(k, Symbol):
+            if not isinstance(k, Symbol) and not isinstance(k, ConstSymbol):
                 raise TypeError(
-                    'Keys must be instances of physeq.Symbol; '
+                    'Keys must be instances of physeq.Symbol or physeq.ConstSymbol; '
                     'sympy.Symbol is not accepted when "strict_symbols = True"  (default)'
                 )
         elif not isinstance(k, sympy.Symbol):
@@ -124,7 +124,7 @@ def translate_numerical_xreplace_rule(
         if strict_symbols:
             if not isinstance(k, Symbol) and not isinstance(k, ConstSymbol):
                 raise TypeError(
-                    'Keys must be instances of physeq.Symbol; '
+                    'Keys must be instances of physeq.Symbol or physeq.ConstSymbol; '
                     'sympy.Symbol is not accepted when "strict_symbols = True" (default)'
                 )
         elif not isinstance(k, sympy.Symbol):
