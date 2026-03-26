@@ -377,7 +377,7 @@ class BaseAddExprOrder(BaseExprOrder):
                 term, ignore_terms_shared_subexprs, ignore_Number_coeffs, normalize=True, flatten=True
             )
         if not term_frozenset:
-                return -1
+            return -1
         for n, terms_n_frozenset in enumerate(self.terms_tuple):
             if not (term_frozenset - terms_n_frozenset):
                 return n
@@ -393,13 +393,13 @@ class BaseAddExprOrder(BaseExprOrder):
         ordering of `terms` based on `.terms_tuple`.
         '''
         if ignore_shared_subexprs:
-            indices = tuple(
-                self.term_to_index(term, reference_collection, None, ignore_Number_coeffs) for term in terms
-            )
-        else:
             terms = tuple(terms)
             indices = tuple(
                 self.term_to_index(term, reference_collection, terms, ignore_Number_coeffs) for term in terms
+            )
+        else:
+            indices = tuple(
+                self.term_to_index(term, reference_collection, None, ignore_Number_coeffs) for term in terms
             )
         index_set = set()
         count_repeated = 0
@@ -891,7 +891,7 @@ class ExprOrderCollection(object):
                         t_frozenset = frozenset((OrderUnevaluatedExpr.unwrap_expr(term),))
                     repeated_set.update(t for t in t_frozenset if t in union_set)
                     union_set |= t_frozenset
-            self._terms_to_shared_subexprs_frozenset_cache[terms] = frozenset(union_set - repeated_set)
+            self._terms_to_shared_subexprs_frozenset_cache[terms] = frozenset(repeated_set)
             return self._terms_to_shared_subexprs_frozenset_cache[terms]
 
 
@@ -1743,7 +1743,6 @@ class WrappedEq(BaseWrapped):
             return wrapped_eq
         cls._wrap_eq_class_cache[eq_class] = wrapper
         return cls._wrap_eq_class_cache[eq_class]
-
 
 
     @property
