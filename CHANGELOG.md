@@ -12,6 +12,9 @@
 *  Fixed bug that caused a duplicate line in solutions when an equation was
    already solved for the desired symbol.
 
+*  `translate_xreplace_rule()` and `translate_numerical_xreplace_rule()`
+   are now compatible with mappings from `ConstSymbol` -> `Quantity`.
+
 
 
 ## v0.1.0 (2026-03-23)

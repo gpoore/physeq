@@ -58,11 +58,17 @@ def translate_xreplace_rule(
             raise TypeError
         if isinstance(v, exprorder.WrappedExpr):
             v = v.expr
-        elif isinstance(v, (sympy.Expr, int, float)):
+        if isinstance(v, (sympy.Expr, int, float)):
             pass
         elif isinstance(v, Quantity):
             if isinstance(k, Symbol):
                 v = k.quantity_value_in_si_coherent_unit(v)
+            elif isinstance(k, ConstSymbol):
+                if v != k.to_quantity():
+                    raise ValueError(
+                        f'Constant symbol "{k}" has value "{k.to_quantity()}", but "{v}" was given'
+                    )
+                v = float(v.value)
             elif not strict_quantities:
                 v = float(v.value)
             else:
@@ -130,6 +136,12 @@ def translate_numerical_xreplace_rule(
         elif isinstance(v, Quantity):
             if isinstance(k, Symbol):
                 v = k.quantity_value_in_si_coherent_unit(v)
+            elif isinstance(k, ConstSymbol):
+                if v != k.to_quantity():
+                    raise ValueError(
+                        f'Constant symbol "{k}" has value "{k.to_quantity()}", but "{v}" was given'
+                    )
+                v = float(v.value)
             elif not strict_quantities:
                 v = float(v.value)
             else:
