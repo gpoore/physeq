@@ -3,6 +3,8 @@
 
 ## v0.2.0 (dev)
 
+*  Added kinematics equations.
+
 *  In `Problem`, more robust generation of values from `setup` and generation
    of solutions from `knowns`.
 

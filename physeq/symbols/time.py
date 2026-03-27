@@ -15,3 +15,5 @@ from ..cas.wrapped import Symbol
 
 
 t = Symbol(r't_{<sub>}', 'time', second)
+t_0 = t.subscript(0, description_prefix='initial')
+t_elapsed = Symbol(r't_{<sub>}', 'elapsed time', second)
