@@ -26,7 +26,7 @@ from . import exprorder
 def translate_xreplace_rule(
     raw_rule: dict[sympy.Symbol | exprorder.WrappedExpr, sympy.Expr | Quantity | int | float],
     check_assumptions: bool = True,
-    check_value_constraints: bool = True,
+    check_constraints: bool = True,
     strict_symbols: bool = True,
     strict_quantities: bool = True,
 ) -> dict[sympy.Symbol, sympy.Expr | int | float]:
@@ -37,7 +37,7 @@ def translate_xreplace_rule(
     If `check_assumptions`:  check that a symbol's assumptions are
     compatible with its replacement value.
 
-    If `check_value_constraints`:  check that a symbol's value constraints
+    If `check_constraints`:  check that a symbol's value constraints
     are satisfied (this goes beyond assumptions).
 
     If `strict_quantities`:  when a replacement value is an
@@ -80,10 +80,10 @@ def translate_xreplace_rule(
             raise TypeError
         if check_assumptions and sympy_check_assumptions(v, k) is False:
             raise TypeError(f'SymPy assumptions for "{k}" are incompatible with replacement value "{v}"')
-        if check_value_constraints and isinstance(k, Symbol) and k.value_constraints is not None:
-            if ((isinstance(v, (int, float)) and not k.value_constraints(v)) or
-                    (isinstance(v, sympy.Expr) and v.is_number and not k.value_constraints(v.n()))):
-                raise TypeError(f'"value_constraints" for "{k}" are incompatible with replacement value "{v}"')
+        if check_constraints and isinstance(k, Symbol) and k.constraints is not None:
+            if ((isinstance(v, (int, float)) and not k.constraints(v)) or
+                    (isinstance(v, sympy.Expr) and v.is_number and not k.constraints(v.n()))):
+                raise TypeError(f'"constraints" for "{k}" are incompatible with replacement value "{v}"')
         if isinstance(v, int):
             v = sympy.Integer(v)
         elif isinstance(v, float):
@@ -94,9 +94,9 @@ def translate_xreplace_rule(
 
 def translate_numerical_xreplace_rule(
     raw_rule: dict[sympy.Symbol | exprorder.WrappedExpr,
-                    sympy.Number | sympy.NumberSymbol | Quantity | ConstSymbol | int | float],
+                   sympy.Number | sympy.NumberSymbol | Quantity | ConstSymbol | int | float],
     check_assumptions: bool = True,
-    check_value_constraints: bool = True,
+    check_constraints: bool = True,
     strict_symbols: bool = True,
     strict_quantities: bool = True,
     evalf_number_symbol: bool = False,
@@ -110,7 +110,7 @@ def translate_numerical_xreplace_rule(
     If `check_assumptions`:  check that a symbol's assumptions are
     compatible with its replacement value.
 
-    If `check_value_constraints`:  check that a symbol's value constraints
+    If `check_constraints`:  check that a symbol's value constraints
     are satisfied (this goes beyond assumptions).
 
     If `strict_quantities`:  when a replacement value is an
@@ -168,10 +168,10 @@ def translate_numerical_xreplace_rule(
             raise TypeError
         if check_assumptions and sympy_check_assumptions(v, k) is False:
             raise TypeError(f'SymPy assumptions for "{k}" are incompatible with replacement value "{v}"')
-        if check_value_constraints and isinstance(k, Symbol) and k.value_constraints is not None:
-            if ((isinstance(v, (int, float)) and not k.value_constraints(v)) or
-                    (isinstance(v, sympy.Expr) and v.is_number and not k.value_constraints(v.n()))):
-                raise TypeError(f'"value_constraints" for "{k}" are incompatible with replacement value "{v}"')
+        if check_constraints and isinstance(k, Symbol) and k.constraints is not None:
+            if ((isinstance(v, (int, float)) and not k.constraints(v)) or
+                    (isinstance(v, sympy.Expr) and v.is_number and not k.constraints(v.n()))):
+                raise TypeError(f'"constraints" for "{k}" are incompatible with replacement value "{v}"')
         if isinstance(v, int):
             v = sympy.Integer(v)
         elif isinstance(v, float):
@@ -318,12 +318,12 @@ class BaseSymbol(sympy.Symbol):
 
 
 class Symbol(BaseSymbol):
-    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', '_children_naming_data', 'value_constraints')
+    __slots__ = ('is_vector_magnitude', 'is_vector_component', 'parent', '_children_naming_data', 'constraints')
     is_vector_magnitude: bool
     is_vector_component: bool
     parent: Self | None
     _children_naming_data: list[tuple[Self, Callable[..., str], tuple]]
-    value_constraints: Callable[[int | float], bool] | None
+    constraints: Callable[[int | float], bool] | None
 
 
     is_phys_const = False
@@ -331,7 +331,7 @@ class Symbol(BaseSymbol):
 
     def __new__(cls, name: str, description: str, si_coherent_unit: UnitBase, *,
                 is_vector_magnitude: bool | None = None, is_vector_component: bool | None = None,
-                parent: Self | None = None, value_constraints: Callable[[int | float], bool] | None = None,
+                parent: Self | None = None, constraints: Callable[[int | float], bool] | None = None,
                 **assumptions) -> Self:
         if not isinstance(name, str):
             raise TypeError
@@ -399,18 +399,22 @@ class Symbol(BaseSymbol):
                 raise ValueError
             assumptions['extended_real'] = True
 
-        if value_constraints is not None and not callable(value_constraints):
+        if constraints is not None and not callable(constraints):
             raise TypeError
 
         subclass_attr = dict(
             is_vector_magnitude = is_vector_magnitude,
             is_vector_component = is_vector_component,
             parent = parent,
-            value_constraints = value_constraints,
+            constraints = constraints,
         )
 
         return cls.__new_inner__(name_without_template_fields, name, description, si_coherent_unit, subclass_attr,
                                  **assumptions)
+
+
+    def _hashable_content(self):
+        return (self.description, self.constraints) + self._assumptions0  # type: ignore
 
 
     _component_template_field = '<i>'
@@ -487,7 +491,7 @@ class Symbol(BaseSymbol):
 
         obj = type(self)(name, description, self.si_coherent_unit,
                         is_vector_magnitude=self.is_vector_magnitude, is_vector_component=self.is_vector_component,
-                        parent=self, value_constraints=self.value_constraints,
+                        parent=self, constraints=self.constraints,
                         **self._assumptions_orig)  # type: ignore
         try:
             _children_naming_data = self._children_naming_data
@@ -536,7 +540,7 @@ class Symbol(BaseSymbol):
                 'Can only derive vector components from a vector magnitude '
                 f'whose name contains a vector component template field "{self._component_template_field}"'
             )
-        if self.value_constraints is not None:
+        if self.constraints is not None:
             raise NotImplementedError
         components = []
         for coord in coords:
@@ -679,7 +683,7 @@ class Symbol(BaseSymbol):
             value = float(value.value)
         if sympy_check_assumptions(value, self) is False:
             return False
-        if self.value_constraints is not None and not self.value_constraints(value):
+        if self.constraints is not None and not self.constraints(value):
             return False
         return True
 
@@ -696,7 +700,7 @@ class Symbol(BaseSymbol):
             value = float(value.value)
         if sympy_check_assumptions(value, self) is False:
             raise ValueError(f'Symbol "{self}" cannot have value "{value}"; this violates symbol assumptions')
-        if self.value_constraints is not None and not self.value_constraints(value):
+        if self.constraints is not None and not self.constraints(value):
             raise ValueError(f'Symbol "{self}" cannot have value "{value}"; this violates symbol value constraints')
 
         # https://en.wikipedia.org/wiki/Coherence_(units_of_measurement)
@@ -748,6 +752,43 @@ class Symbol(BaseSymbol):
         return Quantity(value, self.si_coherent_unit)
 
 
+    def constrain_positive(self) -> SymbolWithConstraints:
+        return SymbolWithConstraints(self, lambda x: x > 0, 'positive')
+
+    def constrain_nonnegative(self) -> SymbolWithConstraints:
+        return SymbolWithConstraints(self, lambda x: x >= 0, 'nonnegative')
+
+    def constrain_negative(self) -> SymbolWithConstraints:
+        return SymbolWithConstraints(self, lambda x: x < 0, 'negative')
+
+    def constrain_nonpositive(self) -> SymbolWithConstraints:
+        return SymbolWithConstraints(self, lambda x: x <= 0, 'nonpositive')
+
+    def constrain_nonzero(self) -> SymbolWithConstraints:
+        return SymbolWithConstraints(self, lambda x: x != 0, 'nonzero')
+
+    def constrain_zero(self) -> SymbolWithConstraints:
+        return SymbolWithConstraints(self, lambda x: x == 0, 'zero')
+
+
+class SymbolWithConstraints(object):
+    __slots__ = ('symbol', 'constraints', 'name')
+
+    def __init__(self, symbol: Symbol, constraints: Callable[[int | float], bool], name: str):
+        if not isinstance(symbol, Symbol):
+            raise TypeError
+        if not callable(constraints):
+            raise TypeError
+        if not isinstance(name, str):
+            raise TypeError
+        if not name:
+            raise ValueError
+        self.symbol = symbol
+        self.constraints = constraints
+        self.name = name
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class ConstSymbol(BaseSymbol):
@@ -901,6 +942,24 @@ class WrappedSymbol(WrappedExpr):
 
     def uniform_quantity(self, *args) -> Quantity:
         return self.expr.uniform_quantity(*args)
+
+    def constrain_positive(self) -> SymbolWithConstraints:
+        return self.expr.constrain_positive()
+
+    def constrain_nonnegative(self) -> SymbolWithConstraints:
+        return self.expr.constrain_nonnegative()
+
+    def constrain_negative(self) -> SymbolWithConstraints:
+        return self.expr.constrain_negative()
+
+    def constrain_nonpositive(self) -> SymbolWithConstraints:
+        return self.expr.constrain_nonpositive()
+
+    def constrain_nonzero(self) -> SymbolWithConstraints:
+        return self.expr.constrain_nonzero()
+
+    def constrain_zero(self) -> SymbolWithConstraints:
+        return self.expr.constrain_zero()
 
 
 

@@ -16,30 +16,36 @@ from astropy.units import Quantity
 from typing import Literal, Self
 from sympy.core.assumptions import check_assumptions as sympy_check_assumptions
 from . import exprorder
-from .symbol import ConstSymbol, Symbol, translate_numerical_xreplace_rule, translate_xreplace_rule
+from .symbol import (ConstSymbol, Symbol, SymbolWithConstraints,
+                     translate_numerical_xreplace_rule, translate_xreplace_rule)
 
 
 
 
-def solveset_with_checked_assumptions(
+def checked_solveset(
     eq: sympy.Eq | exprorder.WrappedEq,
-    symbol: sympy.Symbol | exprorder.WrappedExpr,
+    symbol: sympy.Symbol | exprorder.WrappedExpr | SymbolWithConstraints,
     domain=sympy.Complexes,
     **assumptions: dict[str, bool | None],
 ) -> sympy.FiniteSet:
     '''
     `solveset()` wrapper that only returns solutions consistent with `symbol`
-    assumptions (for example, `nonnegative` or `negative`).  Additional
-    optional assumptions can be provided to further narrow the solutions.
+    assumptions (for example, `nonnegative` or `negative`) and constraints.
+    Additional optional assumptions and constraints can be provided to further
+    narrow the solutions.
     '''
     if isinstance(eq, exprorder.WrappedEq):
         eq = eq.eq
     elif not isinstance(eq, sympy.Eq):
         raise TypeError
+    symbol_with_constraints = None
     if isinstance(symbol, exprorder.WrappedExpr):
         if not isinstance(symbol.expr, sympy.Symbol):
             raise TypeError
         symbol = symbol.expr
+    elif isinstance(symbol, SymbolWithConstraints):
+        symbol_with_constraints = symbol
+        symbol = symbol.symbol
     elif not isinstance(symbol, sympy.Symbol):
         raise TypeError
     if isinstance(symbol, ConstSymbol):
@@ -60,12 +66,23 @@ def solveset_with_checked_assumptions(
             *(x for x in solution_set if sympy_check_assumptions(x, assumptions) is not False),
             evaluate=False,
         )
+    if isinstance(symbol, Symbol) and symbol.constraints:
+        solution_set = sympy.FiniteSet(
+            *(x for x in solution_set if not x.is_number or symbol.constraints(float(x))),  # type: ignore
+            evaluate=False,
+        )
+    if symbol_with_constraints:
+        solution_set = sympy.FiniteSet(
+            *(x for x in solution_set
+              if not x.is_number or symbol_with_constraints.constraints(float(x))),  # type: ignore
+            evaluate=False,
+        )
     return solution_set
 
 
 def solveset_for_ans(
     eq: sympy.Eq | exprorder.WrappedEq,
-    symbol: sympy.Symbol | exprorder.WrappedExpr,
+    symbol: sympy.Symbol | exprorder.WrappedExpr | SymbolWithConstraints,
     domain=sympy.Reals,  # expanded support to include `Complexes`?
     *,
     ans: sympy.Number | sympy.NumberSymbol | int | float,
@@ -85,10 +102,14 @@ def solveset_for_ans(
         eq = eq.eq
     elif not isinstance(eq, sympy.Eq):
         raise TypeError
+    symbol_with_constraints = None
     if isinstance(symbol, exprorder.WrappedExpr):
         if not isinstance(symbol.expr, sympy.Symbol):
             raise TypeError
         symbol = symbol.expr
+    elif isinstance(symbol, SymbolWithConstraints):
+        symbol_with_constraints = symbol
+        symbol = symbol.symbol
     elif not isinstance(symbol, sympy.Symbol):
         raise TypeError
     if isinstance(ans, Quantity):
@@ -109,16 +130,20 @@ def solveset_for_ans(
     if abs_tol is None:
         abs_tol = 0.0
 
-    solution_set = solveset_with_checked_assumptions(eq, symbol, domain=domain)
+    if symbol_with_constraints:
+        solution_set = checked_solveset(eq, symbol_with_constraints, domain=domain)
+    else:
+        solution_set = checked_solveset(eq, symbol, domain=domain)
     filtered = []
     for soln in solution_set:
-        soln_ans = soln.xreplace(translated_xreplace).n()  # type: ignore
-        if soln_ans.is_Number:
-            if math.isclose(soln_ans, ans, rel_tol=rel_tol, abs_tol=abs_tol):
-                filtered.append(soln)
-        else:
+        soln_ans = soln.xreplace(translated_xreplace)
+        if not soln_ans.is_number:
             # Keep solutions that can't be reduced to a number
             filtered.append(soln)
+        soln_ans_float = float(soln_ans)  # type: ignore
+        if not math.isclose(soln_ans_float, ans, rel_tol=rel_tol, abs_tol=abs_tol):
+            continue
+        filtered.append(soln)
     return sympy.FiniteSet(*filtered, evaluate=False)
 
 

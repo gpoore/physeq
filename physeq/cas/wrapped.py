@@ -48,7 +48,7 @@ Eq = equation.WrappedEq.wrap_eq_class(equation.Eq)
 
 
 
-def solveset_with_checked_assumptions(eq: sympy.Eq | exprorder.WrappedEq,
+def checked_solveset(eq: sympy.Eq | exprorder.WrappedEq,
     symbol: sympy.Symbol | exprorder.WrappedExpr,
     domain=sympy.Reals,
     **assumptions: dict[str, bool | None],
@@ -57,7 +57,7 @@ def solveset_with_checked_assumptions(eq: sympy.Eq | exprorder.WrappedEq,
         parents = eq
     else:
         parents = None
-    solution_set = equation.solveset_with_checked_assumptions(eq, symbol, domain, **assumptions)
+    solution_set = equation.checked_solveset(eq, symbol, domain, **assumptions)
     return sympy.FiniteSet(
         *(WrappedExpr(x, parents=parents) for x in solution_set),  # type: ignore
         evaluate=False,
