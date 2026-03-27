@@ -215,3 +215,36 @@ When quantities are randomly generated using these methods, the resulting
 numerical values are checked against mathematical assumptions and any
 additional value constraints that have been defined.  An error is raised for
 unphysical values.
+
+
+### Symbol constraints
+
+Symbols are defined with built-in mathematical assumptions.  For example,
+masses and vector magnitudes cannot be negative, and this is enforced in
+solutions.
+
+Sometimes symbols need additional constraints.  For example, final velocity
+might be positive or negative depending on the time interval we are
+considering.  Additional constraints can be specified for symbols in `knowns`
+and `unknowns`.  It can be useful to add constraints to symbols in `knowns`
+because the symbols in `setup` may not overlap with them.
+
+For example, final velocity in y can be constrained as positive in `knowns` or
+`unknowns` by using `v_y.constrain_positive()`.  This might appear in code
+like this:
+```
+Problem(
+    ...
+    unknowns=[v_y.constrain_positive(), Δy],
+    ...
+)
+```
+
+There are currently six possible constraints:
+
+  * `constrain_positive()`
+  * `constrain_nonnegative()`
+  * `constrain_negative()`
+  * `constrain_nonpositive()`
+  * `constrain_nonzero()`
+  * `constrain_zero()`
