@@ -1,6 +1,14 @@
 # Changelog
 
 
+## v0.3.0 (dev)
+
+ * `Symbol` now has constraint methods for greater/less than (or equal to) a
+   specified value:  `constrain_gt()`, `constrain_ge()`, `constrain_lt()`,
+   `constrain_le(<value>)`.
+
+
+
 ## v0.2.0 (2026-03-26)
 
 *  Added kinematics equations.

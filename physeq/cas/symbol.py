@@ -770,6 +770,26 @@ class Symbol(BaseSymbol):
     def constrain_zero(self) -> SymbolWithConstraints:
         return SymbolWithConstraints(self, lambda x: x == 0, 'zero')
 
+    def constrain_gt(self, value: int | float) -> SymbolWithConstraints:
+        if not isinstance(value, (int, float)):
+            raise TypeError
+        return SymbolWithConstraints(self, lambda x: x > value, f'> {value}')
+
+    def constrain_ge(self, value: int | float) -> SymbolWithConstraints:
+        if not isinstance(value, (int, float)):
+            raise TypeError
+        return SymbolWithConstraints(self, lambda x: x >= value, f'>= {value}')
+
+    def constrain_lt(self, value: int | float) -> SymbolWithConstraints:
+        if not isinstance(value, (int, float)):
+            raise TypeError
+        return SymbolWithConstraints(self, lambda x: x < value, f'< {value}')
+
+    def constrain_le(self, value: int | float) -> SymbolWithConstraints:
+        if not isinstance(value, (int, float)):
+            raise TypeError
+        return SymbolWithConstraints(self, lambda x: x <= value, f'<= {value}')
+
 
 class SymbolWithConstraints(object):
     __slots__ = ('symbol', 'constraints', 'name')
@@ -961,6 +981,17 @@ class WrappedSymbol(WrappedExpr):
     def constrain_zero(self) -> SymbolWithConstraints:
         return self.expr.constrain_zero()
 
+    def constrain_gt(self, value: int | float) -> SymbolWithConstraints:
+        return self.expr.constrain_gt(value)
+
+    def constrain_ge(self, value: int | float) -> SymbolWithConstraints:
+        return self.expr.constrain_ge(value)
+
+    def constrain_lt(self, value: int | float) -> SymbolWithConstraints:
+        return self.expr.constrain_lt(value)
+
+    def constrain_le(self, value: int | float) -> SymbolWithConstraints:
+        return self.expr.constrain_le(value)
 
 
 

@@ -240,7 +240,7 @@ Problem(
 )
 ```
 
-There are currently six possible constraints:
+There are six general constraints:
 
   * `constrain_positive()`
   * `constrain_nonnegative()`
@@ -248,3 +248,11 @@ There are currently six possible constraints:
   * `constrain_nonpositive()`
   * `constrain_nonzero()`
   * `constrain_zero()`
+
+There are also constraints for greater/less than (or equal to) a specified
+`int` or `float` value:
+
+  * `constrain_gt(<value>)`
+  * `constrain_ge(<value>)`
+  * `constrain_lt(<value>)`
+  * `constrain_le(<value>)`
